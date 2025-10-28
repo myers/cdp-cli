@@ -121,6 +121,9 @@ cdp-cli console "example" --all
 # or
 cdp-cli console "example" --tail -1
 
+# Note: When truncated, stderr shows: "(N messages skipped. Use --tail M or --all to see more)"
+# This warning is visible to both humans and LLM agents
+
 # Include message type (switches to object format)
 cdp-cli console "example" --with-type
 {"text":"Page loaded","type":"log","source":"console-api"}

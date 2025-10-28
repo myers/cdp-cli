@@ -398,6 +398,145 @@ describe('Debug Commands', () => {
       expect(msg.url).toBe('https://example.com/app.js');
       expect(msg.line).toBe(42);
     });
+
+    it('should warn on stderr when messages are truncated by tail', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          // Simulate 15 messages (more than default tail of 10)
+          for (let i = 1; i <= 15; i++) {
+            ws.simulateMessage({
+              method: 'Runtime.consoleAPICalled',
+              params: {
+                type: 'log',
+                args: [{ type: 'string', value: `Message ${i}` }],
+                timestamp: Date.now()
+              }
+            });
+          }
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10, // Default limit
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
+
+      const logs = capture.getLogs();
+      const errors = capture.getErrors();
+      capture.restore();
+
+      // Should have 10 messages in stdout
+      expect(logs).toHaveLength(10);
+      expect(JSON.parse(logs[0])).toBe('Message 6'); // Last 10 messages
+
+      // Should have warning in stderr
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('5 messages skipped');
+      expect(errors[0]).toContain('--tail 15');
+      expect(errors[0]).toContain('--all');
+    });
+
+    it('should not warn on stderr when all messages fit in tail', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          // Simulate only 5 messages (less than default tail of 10)
+          for (let i = 1; i <= 5; i++) {
+            ws.simulateMessage({
+              method: 'Runtime.consoleAPICalled',
+              params: {
+                type: 'log',
+                args: [{ type: 'string', value: `Message ${i}` }],
+                timestamp: Date.now()
+              }
+            });
+          }
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10, // Default limit
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
+
+      const logs = capture.getLogs();
+      const errors = capture.getErrors();
+      capture.restore();
+
+      // Should have all 5 messages
+      expect(logs).toHaveLength(5);
+
+      // Should have NO warning in stderr
+      expect(errors).toHaveLength(0);
+    });
+
+    it('should not warn when --all is used', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          // Simulate 15 messages
+          for (let i = 1; i <= 15; i++) {
+            ws.simulateMessage({
+              method: 'Runtime.consoleAPICalled',
+              params: {
+                type: 'log',
+                args: [{ type: 'string', value: `Message ${i}` }],
+                timestamp: Date.now()
+              }
+            });
+          }
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: -1, // Show all
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
+
+      const logs = capture.getLogs();
+      const errors = capture.getErrors();
+      capture.restore();
+
+      // Should have all 15 messages
+      expect(logs).toHaveLength(15);
+
+      // Should have NO warning (not truncated)
+      expect(errors).toHaveLength(0);
+    });
   });
 
   describe('snapshot', () => {

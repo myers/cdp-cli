@@ -42,9 +42,17 @@ export async function listConsole(
       messages = messages.filter(m => m.type === options.type);
     }
 
+    // Track total before truncation for stderr warning
+    const totalMessages = messages.length;
+
     // Apply tail limit (last N messages)
     if (options.tail !== -1 && messages.length > options.tail) {
       messages = messages.slice(-options.tail);
+
+      // Warn on stderr when truncating
+      const skippedCount = totalMessages - messages.length;
+      const suggestedTail = Math.min(totalMessages, 50);
+      console.error(`(${skippedCount} messages skipped. Use --tail ${suggestedTail} or --all to see more)`);
     }
 
     // Output format depends on flags
