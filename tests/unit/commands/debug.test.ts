@@ -18,7 +18,7 @@ describe('Debug Commands', () => {
   });
 
   describe('listConsole', () => {
-    it('should collect and output console messages', async () => {
+    it('should output bare strings by default (minimal format)', async () => {
       const capture = captureConsoleOutput();
       const context = new CDPContext();
 
@@ -35,22 +35,23 @@ describe('Debug Commands', () => {
         return ws;
       };
 
-      await debug.listConsole(context, { page: 'page1', duration: 0.1 });
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
 
       const logs = capture.getLogs();
       capture.restore();
 
       expect(logs).toHaveLength(2);
 
-      const logMsg = JSON.parse(logs[0]);
-      expect(logMsg.type).toBe('log');
-      expect(logMsg.text).toBe('Hello world');
-      expect(logMsg.source).toBe('console-api');
-      expect(logMsg.timestamp).toBeDefined();
-
-      const errorMsg = JSON.parse(logs[1]);
-      expect(errorMsg.type).toBe('error');
-      expect(errorMsg.text).toBe('Error occurred');
+      // Bare strings (just the message text as JSON string)
+      expect(JSON.parse(logs[0])).toBe('Hello world');
+      expect(JSON.parse(logs[1])).toBe('Error occurred');
     });
 
     it('should filter messages by type', async () => {
@@ -71,16 +72,23 @@ describe('Debug Commands', () => {
       };
 
       // Filter for errors only
-      await debug.listConsole(context, { page: 'page1', duration: 0.1, type: 'error' });
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        type: 'error',
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
 
       const logs = capture.getLogs();
       capture.restore();
 
       expect(logs).toHaveLength(2); // error + exception (both type 'error')
-      logs.forEach(log => {
-        const msg = JSON.parse(log);
-        expect(msg.type).toBe('error');
-      });
+      // With bare strings, we just get the text
+      expect(JSON.parse(logs[0])).toBe('Error occurred');
+      expect(JSON.parse(logs[1])).toContain('Cannot read');
     });
 
     it('should respect duration parameter', async () => {
@@ -88,7 +96,14 @@ describe('Debug Commands', () => {
       const context = new CDPContext();
 
       const start = Date.now();
-      await debug.listConsole(context, { page: 'page1', duration: 0.15 });
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.15,
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
       const elapsed = Date.now() - start;
 
       expect(elapsed).toBeGreaterThanOrEqual(140);
@@ -101,7 +116,14 @@ describe('Debug Commands', () => {
       const context = new CDPContext();
 
       try {
-        await debug.listConsole(context, { page: 'nonexistent', duration: 0.1 });
+        await debug.listConsole(context, {
+          page: 'nonexistent',
+          duration: 0.1,
+          tail: 10,
+          withType: false,
+          withTimestamp: false,
+          withSource: false
+        });
       } catch (e) {
         // Expected process.exit
       }
@@ -131,10 +153,250 @@ describe('Debug Commands', () => {
         return ws;
       };
 
-      await debug.listConsole(context, { page: 'page1', duration: 0.05 });
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.05,
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
 
       expect(wsClosed).toBe(true);
       capture.restore();
+    });
+
+    it('should output objects with type when --with-type is used', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          ws.simulateMessage(consoleMessages.log);
+          ws.simulateMessage(consoleMessages.error);
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: true,
+        withTimestamp: false,
+        withSource: false
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(2);
+
+      const logMsg = JSON.parse(logs[0]);
+      expect(logMsg.text).toBe('Hello world');
+      expect(logMsg.type).toBe('log');
+      expect(logMsg.source).toBe('console-api');
+      expect(logMsg.timestamp).toBeUndefined();
+
+      const errorMsg = JSON.parse(logs[1]);
+      expect(errorMsg.text).toBe('Error occurred');
+      expect(errorMsg.type).toBe('error');
+    });
+
+    it('should output objects with timestamp when --with-timestamp is used', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          ws.simulateMessage(consoleMessages.log);
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: false,
+        withTimestamp: true,
+        withSource: false
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+
+      const logMsg = JSON.parse(logs[0]);
+      expect(logMsg.text).toBe('Hello world');
+      expect(logMsg.timestamp).toBeDefined();
+      expect(logMsg.type).toBeUndefined();
+    });
+
+    it('should limit output to last N messages with --tail', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          // Simulate 5 messages
+          for (let i = 1; i <= 5; i++) {
+            ws.simulateMessage({
+              method: 'Runtime.consoleAPICalled',
+              params: {
+                type: 'log',
+                args: [{ type: 'string', value: `Message ${i}` }],
+                timestamp: Date.now()
+              }
+            });
+          }
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 2, // Only last 2 messages
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(2);
+      expect(JSON.parse(logs[0])).toBe('Message 4');
+      expect(JSON.parse(logs[1])).toBe('Message 5');
+    });
+
+    it('should show all messages with --tail -1', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          // Simulate 15 messages (more than default tail of 10)
+          for (let i = 1; i <= 15; i++) {
+            ws.simulateMessage({
+              method: 'Runtime.consoleAPICalled',
+              params: {
+                type: 'log',
+                args: [{ type: 'string', value: `Message ${i}` }],
+                timestamp: Date.now()
+              }
+            });
+          }
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: -1, // Show all
+        withType: false,
+        withTimestamp: false,
+        withSource: false
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(15); // All messages shown
+    });
+
+    it('should include source location with --with-source', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          ws.simulateMessage(consoleMessages.exception); // Has url and line
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: true
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+
+      const msg = JSON.parse(logs[0]);
+      expect(msg.text).toContain('Cannot read');
+      expect(msg.url).toBe('https://example.com/app.js');
+      expect(msg.line).toBe(42);
+      expect(msg.type).toBeUndefined(); // Not included without --with-type
+    });
+
+    it('should include all fields when verbose flags are set via code', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          ws.simulateMessage(consoleMessages.exception); // Has all fields
+        }, 10);
+
+        return ws;
+      };
+
+      // Simulating --verbose by setting all three flags
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: true,
+        withTimestamp: true,
+        withSource: true
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+
+      const msg = JSON.parse(logs[0]);
+      expect(msg.text).toContain('Cannot read');
+      expect(msg.type).toBe('error');
+      expect(msg.source).toBe('exception');
+      expect(msg.timestamp).toBeDefined();
+      expect(msg.url).toBe('https://example.com/app.js');
+      expect(msg.line).toBe(42);
     });
   });
 

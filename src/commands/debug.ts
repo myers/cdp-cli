@@ -11,7 +11,15 @@ import { writeFileSync } from 'fs';
  */
 export async function listConsole(
   context: CDPContext,
-  options: { type?: string; page: string; duration: number }
+  options: {
+    type?: string;
+    page: string;
+    duration: number;
+    tail: number;
+    withType: boolean;
+    withTimestamp: boolean;
+    withSource: boolean;
+  }
 ): Promise<void> {
   let ws;
   try {
@@ -34,17 +42,42 @@ export async function listConsole(
       messages = messages.filter(m => m.type === options.type);
     }
 
-    // Output as NDJSON
-    const output = messages.map(msg => ({
-      type: msg.type,
-      timestamp: msg.timestamp,
-      text: msg.text,
-      source: msg.source,
-      ...(msg.line && { line: msg.line }),
-      ...(msg.url && { url: msg.url })
-    }));
+    // Apply tail limit (last N messages)
+    if (options.tail !== -1 && messages.length > options.tail) {
+      messages = messages.slice(-options.tail);
+    }
 
-    outputLines(output);
+    // Output format depends on flags
+    const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
+
+    if (needsObjectFormat) {
+      // Object format with requested fields
+      const output = messages.map(msg => {
+        const obj: any = { text: msg.text };
+
+        if (options.withType) {
+          obj.type = msg.type;
+          obj.source = msg.source;
+        }
+
+        if (options.withTimestamp) {
+          obj.timestamp = msg.timestamp;
+        }
+
+        if (options.withSource) {
+          if (msg.line) obj.line = msg.line;
+          if (msg.url) obj.url = msg.url;
+        }
+
+        return obj;
+      });
+      outputLines(output);
+    } else {
+      // Minimal format: bare strings
+      messages.forEach(msg => {
+        outputRaw(JSON.stringify(msg.text));
+      });
+    }
   } catch (error) {
     outputError(
       (error as Error).message,

@@ -106,19 +106,45 @@ cdp-cli close A1B2C3
 
 ### Debugging
 
-**console** - List console messages (collects for 0.1s by default)
+**console** - List console messages (minimal output by default, optimized for LLM token savings)
 ```bash
-# Collect messages (default 0.1 seconds)
+# Minimal output (bare strings, last 10 messages)
 cdp-cli console "example"
+"Page loaded"
+"API call successful"
+
+# Show more messages
+cdp-cli console "example" --tail 50
+
+# Show all messages (no limit)
+cdp-cli console "example" --all
+# or
+cdp-cli console "example" --tail -1
+
+# Include message type (switches to object format)
+cdp-cli console "example" --with-type
+{"text":"Page loaded","type":"log","source":"console-api"}
+{"text":"Error: failed","type":"error","source":"exception","line":42,"url":"app.js"}
+
+# Include timestamp
+cdp-cli console "example" --with-timestamp
+{"text":"Page loaded","timestamp":1698234567890}
+
+# Include source location (url, line number for exceptions)
+cdp-cli console "example" --with-source
+{"text":"Error: undefined","url":"https://example.com/app.js","line":42}
+
+# Verbose mode - all fields (shortcut for all three flags)
+cdp-cli console "example" --verbose
+# or
+cdp-cli console "example" -v
+{"text":"Error: undefined","type":"error","source":"exception","timestamp":1698234567890,"url":"app.js","line":42}
+
+# Filter by type (still outputs bare strings by default)
+cdp-cli console "example" --type error
 
 # Collect for longer duration (2 seconds)
 cdp-cli console "example" --duration 2
-
-# Filter by type
-cdp-cli console "example" --type error
-
-# Combine duration and filtering
-cdp-cli console "example" --duration 2 --type error
 ```
 
 **snapshot** - Get page content snapshot

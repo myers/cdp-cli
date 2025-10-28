@@ -137,14 +137,51 @@ cli.command(
         description: 'Collection duration in seconds',
         alias: 'd',
         default: 0.1
+      })
+      .option('tail', {
+        type: 'number',
+        description: 'Limit to last N messages (default: 10, use -1 for all)',
+        alias: 'n',
+        default: 10
+      })
+      .option('all', {
+        type: 'boolean',
+        description: 'Show all messages (equivalent to --tail -1)',
+        default: false
+      })
+      .option('with-type', {
+        type: 'boolean',
+        description: 'Include message type field',
+        default: false
+      })
+      .option('with-timestamp', {
+        type: 'boolean',
+        description: 'Include timestamp field',
+        default: false
+      })
+      .option('with-source', {
+        type: 'boolean',
+        description: 'Include source location (url, line number)',
+        default: false
+      })
+      .option('verbose', {
+        type: 'boolean',
+        description: 'Include all fields (type, timestamp, source location)',
+        alias: 'v',
+        default: false
       });
   },
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
+    const verbose = argv.verbose as boolean;
     await debug.listConsole(context, {
       type: argv.type as string | undefined,
       page: argv.page as string,
-      duration: argv.duration as number
+      duration: argv.duration as number,
+      tail: argv.all ? -1 : (argv.tail as number),
+      withType: verbose || (argv['with-type'] as boolean),
+      withTimestamp: verbose || (argv['with-timestamp'] as boolean),
+      withSource: verbose || (argv['with-source'] as boolean)
     });
   }
 );
