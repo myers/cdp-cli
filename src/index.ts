@@ -8,18 +8,28 @@
 
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { CDPContext } from './context.js';
 import * as pages from './commands/pages.js';
 import * as debug from './commands/debug.js';
 import * as network from './commands/network.js';
 import * as input from './commands/input.js';
 
+// Read version from package.json
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, '../package.json'), 'utf-8')
+);
+const version = packageJson.version;
+
 const DEFAULT_CDP_URL = 'http://localhost:9222';
 
 // Create CLI
 const cli = yargs(hideBin(process.argv))
   .scriptName('cdp-cli')
-  .version('0.1.0')
+  .version(version)
   .usage('Usage: $0 <command> [options]')
   .option('cdp-url', {
     type: 'string',
@@ -27,13 +37,24 @@ const cli = yargs(hideBin(process.argv))
     default: DEFAULT_CDP_URL
   })
   .demandCommand(1, 'You must provide a command')
+  .strict()
+  .fail((msg, err, yargs) => {
+    if (msg) {
+      console.error(`Error: ${msg}\n`);
+    }
+    if (err) {
+      console.error(err.message);
+    }
+    console.error('Run "cdp-cli --help" for usage information.');
+    process.exit(1);
+  })
   .help()
   .alias('help', 'h')
   .alias('version', 'v');
 
 // Page management commands
 cli.command(
-  'list-pages',
+  'tabs',
   'List all open browser pages',
   {},
   async (argv) => {
@@ -43,7 +64,7 @@ cli.command(
 );
 
 cli.command(
-  'new-page [url]',
+  'new [url]',
   'Create a new page/tab',
   (yargs) => {
     return yargs.positional('url', {
@@ -58,7 +79,7 @@ cli.command(
 );
 
 cli.command(
-  'navigate <action> <page>',
+  'go <action> <page>',
   'Navigate page (URL, back, forward, reload)',
   (yargs) => {
     return yargs
@@ -82,7 +103,7 @@ cli.command(
 );
 
 cli.command(
-  'close-page <idOrTitle>',
+  'close <idOrTitle>',
   'Close a page',
   (yargs) => {
     return yargs.positional('idOrTitle', {
@@ -98,7 +119,7 @@ cli.command(
 
 // Debug commands
 cli.command(
-  'list-console <page>',
+  'console <page>',
   'List console messages',
   (yargs) => {
     return yargs
@@ -215,7 +236,7 @@ cli.command(
 
 // Network commands
 cli.command(
-  'list-network <page>',
+  'network <page>',
   'List network requests',
   (yargs) => {
     return yargs
@@ -307,7 +328,7 @@ cli.command(
 );
 
 cli.command(
-  'press-key <key> <page>',
+  'key <key> <page>',
   'Press a keyboard key',
   (yargs) => {
     return yargs

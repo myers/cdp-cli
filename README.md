@@ -38,16 +38,16 @@ chrome.exe --remote-debugging-port=9222
 
 ```bash
 # List all open pages
-cdp-cli list-pages
+cdp-cli tabs
 
 # Navigate to a URL
-cdp-cli new-page "https://example.com"
+cdp-cli new "https://example.com"
 
 # Take a screenshot
 cdp-cli screenshot "example" --output screenshot.jpg
 
 # List console messages (collects for 0.1s)
-cdp-cli list-console "example"
+cdp-cli console "example"
 
 # Evaluate JavaScript
 cdp-cli eval "document.title" "example"
@@ -63,15 +63,15 @@ All list commands output **newline-delimited JSON (NDJSON)** - one complete JSON
 ### Example NDJSON Output
 
 ```bash
-$ cdp-cli list-pages
+$ cdp-cli tabs
 {"id":"A1B2C3","title":"GitHub","url":"https://github.com","type":"page"}
 {"id":"D4E5F6","title":"Google","url":"https://google.com","type":"page"}
 
-$ cdp-cli list-console "example"
+$ cdp-cli console "example"
 {"type":"log","timestamp":1698234567890,"text":"Page loaded","source":"console-api"}
 {"type":"error","timestamp":1698234568123,"text":"TypeError: Cannot read...","source":"exception","line":42,"url":"https://example.com/app.js"}
 
-$ cdp-cli list-network "example" | grep '"type":"fetch"'
+$ cdp-cli network "example" | grep '"type":"fetch"'
 {"url":"https://api.example.com/data","method":"GET","status":200,"type":"fetch","size":4567}
 ```
 
@@ -79,46 +79,46 @@ $ cdp-cli list-network "example" | grep '"type":"fetch"'
 
 ### Page Management
 
-**list-pages** - List all open browser pages
+**tabs** - List all open browser pages
 ```bash
-cdp-cli list-pages
+cdp-cli tabs
 ```
 
-**new-page** - Create a new page/tab
+**new** - Create a new page/tab
 ```bash
-cdp-cli new-page "https://example.com"
-cdp-cli new-page  # Empty page
+cdp-cli new "https://example.com"
+cdp-cli new  # Empty page
 ```
 
-**navigate** - Navigate page (URL, back, forward, reload)
+**go** - Navigate page (URL, back, forward, reload)
 ```bash
-cdp-cli navigate "https://github.com" "example"
-cdp-cli navigate back "example"
-cdp-cli navigate forward "example"
-cdp-cli navigate reload "example"
+cdp-cli go "https://github.com" "example"
+cdp-cli go back "example"
+cdp-cli go forward "example"
+cdp-cli go reload "example"
 ```
 
-**close-page** - Close a page
+**close** - Close a page
 ```bash
-cdp-cli close-page "example"
-cdp-cli close-page A1B2C3
+cdp-cli close "example"
+cdp-cli close A1B2C3
 ```
 
 ### Debugging
 
-**list-console** - List console messages (collects for 0.1s by default)
+**console** - List console messages (collects for 0.1s by default)
 ```bash
 # Collect messages (default 0.1 seconds)
-cdp-cli list-console "example"
+cdp-cli console "example"
 
 # Collect for longer duration (2 seconds)
-cdp-cli list-console "example" --duration 2
+cdp-cli console "example" --duration 2
 
 # Filter by type
-cdp-cli list-console "example" --type error
+cdp-cli console "example" --type error
 
 # Combine duration and filtering
-cdp-cli list-console "example" --duration 2 --type error
+cdp-cli console "example" --duration 2 --type error
 ```
 
 **snapshot** - Get page content snapshot
@@ -154,20 +154,20 @@ cdp-cli screenshot "example"
 
 ### Network Inspection
 
-**list-network** - List network requests (collects for 0.1s by default)
+**network** - List network requests (collects for 0.1s by default)
 ```bash
 # Collect requests (default 0.1 seconds)
-cdp-cli list-network "example"
+cdp-cli network "example"
 
 # Collect for longer duration (5 seconds)
-cdp-cli list-network "example" --duration 5
+cdp-cli network "example" --duration 5
 
 # Filter by type
-cdp-cli list-network "example" --type fetch
-cdp-cli list-network "example" --type xhr
+cdp-cli network "example" --type fetch
+cdp-cli network "example" --type xhr
 
 # Combine duration and filtering
-cdp-cli list-network "example" --duration 5 --type fetch
+cdp-cli network "example" --duration 5 --type fetch
 ```
 
 ### Input Automation
@@ -184,11 +184,11 @@ cdp-cli fill "input#email" "user@example.com" "example"
 cdp-cli fill "input[name='password']" "secret123" "example"
 ```
 
-**press-key** - Press a keyboard key
+**key** - Press a keyboard key
 ```bash
-cdp-cli press-key enter "example"
-cdp-cli press-key tab "example"
-cdp-cli press-key escape "example"
+cdp-cli key enter "example"
+cdp-cli key tab "example"
+cdp-cli key escape "example"
 ```
 
 ## LLM Usage Patterns
@@ -197,7 +197,7 @@ cdp-cli press-key escape "example"
 
 ```bash
 # 1. List pages to find target
-cdp-cli list-pages | grep "example"
+cdp-cli tabs | grep "example"
 
 # 2. Get accessibility tree to understand page structure
 cdp-cli snapshot "example" --format ax > page-structure.json
@@ -215,20 +215,20 @@ cdp-cli screenshot "example" --output result.jpg
 
 ```bash
 # 1. Navigate to app
-cdp-cli new-page "http://localhost:3000"
+cdp-cli new "http://localhost:3000"
 
 # 2. Monitor console for errors (increase duration for continuous monitoring)
-cdp-cli list-console "localhost" --duration 10 --type error
+cdp-cli console "localhost" --duration 10 --type error
 
 # 3. Inspect failed network requests
-cdp-cli list-network "localhost" --duration 5 | grep '"status":4'
+cdp-cli network "localhost" --duration 5 | grep '"status":4'
 ```
 
 ### Pattern 3: Automated Testing
 
 ```bash
 # 1. Open test page
-cdp-cli new-page "http://localhost:8080/test.html"
+cdp-cli new "http://localhost:8080/test.html"
 
 # 2. Fill form
 cdp-cli fill "input#username" "testuser" "test"
@@ -247,7 +247,7 @@ cdp-cli screenshot "test" --output test-result.jpg
 
 ```bash
 # 1. Navigate to page
-cdp-cli navigate "https://example.com/data" "example"
+cdp-cli go "https://example.com/data" "example"
 
 # 2. Extract data via JavaScript
 cdp-cli eval "Array.from(document.querySelectorAll('.item')).map(el => ({
@@ -272,8 +272,8 @@ cdp-cli eval "Array.from(document.querySelectorAll('.item')).map(el => ({
 
 2. **Leverage grep for filtering**:
    ```bash
-   cdp-cli list-network "example" | grep '"status":404'
-   cdp-cli list-console "example" | grep error
+   cdp-cli network "example" | grep '"status":404'
+   cdp-cli console "example" | grep error
    ```
 
 3. **Use accessibility tree for element discovery**:
@@ -285,8 +285,8 @@ cdp-cli eval "Array.from(document.querySelectorAll('.item')).map(el => ({
 
 4. **Chain commands with Unix tools**:
    ```bash
-   cdp-cli list-pages | jq -r '.title'
-   cdp-cli list-console "example" --collect | grep error | tail -5
+   cdp-cli tabs | jq -r '.title'
+   cdp-cli console "example" | grep error | tail -5
    ```
 
 5. **Error handling**: All errors output NDJSON with `"error": true`
