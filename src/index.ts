@@ -395,22 +395,71 @@ cli.command(
         description: 'Wait timeout in ms for selector to appear',
         alias: 'w'
       })
+      .option('text', {
+        type: 'string',
+        description: 'Match element by visible text instead of CSS selector'
+      })
+      .option('match', {
+        type: 'string',
+        description: 'Text matching strategy (exact, contains, regex)',
+        choices: ['exact', 'contains', 'regex'] as const,
+        default: 'exact'
+      })
+      .option('case-sensitive', {
+        type: 'boolean',
+        description: 'Treat text match as case-sensitive',
+        default: false
+      })
+      .option('nth', {
+        type: 'number',
+        description: 'Select the Nth match when multiple elements match',
+        coerce: (value: unknown) => {
+          if (value === undefined || value === null || value === '') {
+            return undefined;
+          }
+          const num = Number(value);
+          if (!Number.isInteger(num) || num < 1) {
+            throw new Error('--nth must be a positive integer');
+          }
+          return num;
+        }
+      })
       .check((argv) => {
-        if (!argv.selector && !argv.node) {
-          throw new Error('Either <selector> or --node must be provided');
+        const hasSelector = typeof argv.selector === 'string' && argv.selector.length > 0;
+        const hasText = typeof argv.text === 'string' && argv.text.length > 0;
+        const hasNode = typeof argv.node === 'number';
+
+        // Count how many options are provided
+        const providedCount = [hasSelector, hasText, hasNode].filter(Boolean).length;
+
+        if (providedCount === 0) {
+          throw new Error('Provide either a CSS selector, --text, or --node');
+        }
+        if (providedCount > 1) {
+          throw new Error('CSS selector, --text, and --node are mutually exclusive');
         }
         return true;
       });
   },
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
-    await input.click(context, argv.selector as string | undefined, {
-      page: argv.page as string,
-      node: argv.node as number | undefined,
-      double: argv.double as boolean,
-      userGesture: argv['user-gesture'] as boolean,
-      wait: argv.wait as number | undefined
-    });
+    await input.click(
+      context,
+      {
+        selector: argv.selector as string | undefined,
+        node: argv.node as number | undefined,
+        text: argv.text as string | undefined,
+        match: argv.match as 'exact' | 'contains' | 'regex',
+        caseSensitive: argv.caseSensitive as boolean,
+        nth: argv.nth as number | undefined
+      },
+      {
+        page: argv.page as string,
+        double: argv.double as boolean,
+        userGesture: argv['user-gesture'] as boolean,
+        wait: argv.wait as number | undefined,
+      }
+    );
   }
 );
 
