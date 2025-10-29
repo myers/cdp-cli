@@ -5,9 +5,9 @@
 /**
  * Fetch with helpful error messages for connection failures
  */
-export async function cdpFetch(url: string): Promise<Response> {
+export async function cdpFetch(url: string, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(url);
+    return await fetch(url, init);
   } catch (error: any) {
     // Handle connection errors (ECONNREFUSED, ECONNRESET, etc)
     if (error.cause?.code === 'ECONNREFUSED' || error.cause?.code === 'ECONNRESET') {
