@@ -49,8 +49,7 @@ const cli = yargs(hideBin(process.argv))
     process.exit(1);
   })
   .help()
-  .alias('help', 'h')
-  .alias('version', 'v');
+  .alias('help', 'h');
 
 // Page management commands
 cli.command(
