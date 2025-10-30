@@ -89,7 +89,8 @@ export async function listConsole(
   } catch (error) {
     outputError(
       (error as Error).message,
-      'LIST_CONSOLE_FAILED'
+      'LIST_CONSOLE_FAILED',
+      { page: options.page }
     );
     process.exit(1);
   } finally {
@@ -146,7 +147,7 @@ export async function snapshot(
     outputError(
       (error as Error).message,
       'SNAPSHOT_FAILED',
-      { format: options.format }
+      { format: options.format, page: options.page }
     );
     process.exit(1);
   } finally {
@@ -196,7 +197,7 @@ export async function evaluate(
     outputError(
       (error as Error).message,
       'EVAL_FAILED',
-      { expression }
+      { expression, page: options.page }
     );
     process.exit(1);
   } finally {
@@ -211,7 +212,7 @@ export async function evaluate(
  */
 export async function screenshot(
   context: CDPContext,
-  options: { output?: string; format?: string; page: string; quality?: number }
+  options: { output: string; format?: string; page: string; quality?: number }
 ): Promise<void> {
   let ws;
   try {
@@ -233,29 +234,20 @@ export async function screenshot(
       quality: format === 'jpeg' ? quality : undefined
     });
 
-    if (options.output) {
-      // Save to file
-      const buffer = Buffer.from(result.data, 'base64');
-      writeFileSync(options.output, buffer);
+    // Save to file
+    const buffer = Buffer.from(result.data, 'base64');
+    writeFileSync(options.output, buffer);
 
-      outputSuccess('Screenshot saved', {
-        file: options.output,
-        format,
-        size: buffer.length
-      });
-    } else {
-      // Output base64 data
-      outputLine({
-        success: true,
-        format,
-        data: result.data
-      });
-    }
+    outputSuccess('Screenshot saved', {
+      file: options.output,
+      format,
+      size: buffer.length
+    });
   } catch (error) {
     outputError(
       (error as Error).message,
       'SCREENSHOT_FAILED',
-      { output: options.output }
+      { output: options.output, page: options.page }
     );
     process.exit(1);
   } finally {

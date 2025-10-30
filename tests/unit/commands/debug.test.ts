@@ -710,30 +710,13 @@ describe('Debug Commands', () => {
       expect(result.data.size).toBeGreaterThan(0);
     });
 
-    it('should output base64 when no file specified', async () => {
-      const capture = captureConsoleOutput();
-      const context = new CDPContext();
-
-      await debug.screenshot(context, { page: 'page1' });
-
-      const logs = capture.getLogs();
-      capture.restore();
-
-      expect(writeFileSync).not.toHaveBeenCalled();
-
-      const result = JSON.parse(logs[0]);
-      expect(result.success).toBe(true);
-      expect(result.format).toBe('jpeg'); // default
-      expect(result.data).toBe('base64encodeddata==');
-    });
-
     it('should validate format (BUG FIX TEST)', async () => {
       const capture = captureConsoleOutput();
       const exitMock = mockProcessExit();
       const context = new CDPContext();
 
       try {
-        await debug.screenshot(context, { page: 'page1', format: 'gif' });
+        await debug.screenshot(context, { page: 'page1', output: '/tmp/test.jpg', format: 'gif' });
       } catch (e) {
         // Expected process.exit
       }
@@ -767,7 +750,7 @@ describe('Debug Commands', () => {
       };
 
       // Test PNG - quality should NOT be passed
-      await debug.screenshot(context, { page: 'page1', format: 'png', quality: 50 });
+      await debug.screenshot(context, { page: 'page1', output: '/tmp/test.png', format: 'png', quality: 50 });
 
       const pngCommand = capturedCommands.find(m => m.method === 'Page.captureScreenshot');
       expect(pngCommand.params.format).toBe('png');
@@ -777,7 +760,7 @@ describe('Debug Commands', () => {
       capture.getLogs(); // Clear logs
 
       // Test JPEG - quality should be passed
-      await debug.screenshot(context, { page: 'page1', format: 'jpeg', quality: 75 });
+      await debug.screenshot(context, { page: 'page1', output: '/tmp/test.jpg', format: 'jpeg', quality: 75 });
 
       const jpegCommand = capturedCommands.find(m => m.method === 'Page.captureScreenshot');
       expect(jpegCommand.params.format).toBe('jpeg');
@@ -792,7 +775,7 @@ describe('Debug Commands', () => {
       const context = new CDPContext();
 
       try {
-        await debug.screenshot(context, { page: 'nonexistent' });
+        await debug.screenshot(context, { page: 'nonexistent', output: '/tmp/test.jpg' });
       } catch (e) {
         // Expected process.exit
       }
