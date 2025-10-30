@@ -16,6 +16,8 @@ import * as pages from './commands/pages.js';
 import * as debug from './commands/debug.js';
 import * as network from './commands/network.js';
 import * as input from './commands/input.js';
+import * as launch from './commands/launch.js';
+import { getDefaultCdpUrl, getDefaultPort } from './config.js';
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,7 +26,7 @@ const packageJson = JSON.parse(
 );
 const version = packageJson.version;
 
-const DEFAULT_CDP_URL = 'http://localhost:9222';
+const DEFAULT_CDP_URL = getDefaultCdpUrl();
 
 // Create CLI
 const cli = yargs(hideBin(process.argv))
@@ -113,6 +115,23 @@ cli.command(
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
     await pages.closePage(context, argv.idOrTitle as string);
+  }
+);
+
+// Launch command
+cli.command(
+  'launch',
+  'Launch Chrome with remote debugging (macOS only)',
+  (yargs) => {
+    return yargs.option('port', {
+      type: 'number',
+      description: 'Remote debugging port',
+      alias: 'p'
+    });
+  },
+  async (argv) => {
+    const port = (argv.port as number | undefined) ?? getDefaultPort();
+    await launch.launchChrome({ port });
   }
 );
 
