@@ -41,6 +41,37 @@ const cli = yargs(hideBin(process.argv))
   .demandCommand(1, 'You must provide a command')
   .strict()
   .fail((msg, err, yargs) => {
+    // Detect missing positional arguments and provide helpful error
+    if (msg && msg.includes('Not enough non-option arguments')) {
+      // Extract command from process.argv (skipping node, script, and options)
+      const args = process.argv.slice(2);
+      const command = args.find(arg => !arg.startsWith('-'));
+
+      // Map commands to their missing arguments and helpful suggestions
+      const commandHelp: Record<string, { args: string[]; suggestion: string }> = {
+        'console': { args: ['page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'go': { args: ['action', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'close': { args: ['idOrTitle'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'snapshot': { args: ['page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'eval': { args: ['expression', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'screenshot': { args: ['page', 'output'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'network': { args: ['page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'click': { args: ['selector', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'fill': { args: ['selector', 'value', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'key': { args: ['key', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." }
+      };
+
+      if (command && commandHelp[command]) {
+        const { args, suggestion } = commandHelp[command];
+        const argsList = args.map(a => `'${a}'`).join(', ');
+        console.error(`Error: Missing required argument${args.length > 1 ? 's' : ''}: ${argsList}\n`);
+        console.error(suggestion);
+        console.error(`\nRun "cdp-cli ${command} --help" for usage information.`);
+        process.exit(1);
+      }
+    }
+
+    // Default error handling
     if (msg) {
       console.error(`Error: ${msg}\n`);
     }
@@ -252,7 +283,7 @@ cli.command(
 );
 
 cli.command(
-  'screenshot <page>',
+  'screenshot <page> <output>',
   'Take a screenshot',
   (yargs) => {
     return yargs
@@ -260,10 +291,9 @@ cli.command(
         describe: 'Page ID or title',
         type: 'string'
       })
-      .option('output', {
-        type: 'string',
-        description: 'Output file path',
-        alias: 'o'
+      .positional('output', {
+        describe: 'Output file path',
+        type: 'string'
       })
       .option('format', {
         type: 'string',
@@ -281,7 +311,7 @@ cli.command(
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
     await debug.screenshot(context, {
-      output: argv.output as string | undefined,
+      output: argv.output as string,
       format: argv.format as string,
       quality: argv.quality as number,
       page: argv.page as string

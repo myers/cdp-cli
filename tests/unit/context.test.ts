@@ -75,6 +75,51 @@ describe('CDPContext', () => {
       const context = new CDPContext();
       await expect(context.findPage('nonexistent')).rejects.toThrow('Page not found');
     });
+
+    it('should include available pages in error message', async () => {
+      const context = new CDPContext();
+
+      try {
+        await context.findPage('nonexistent');
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        const message = (error as Error).message;
+
+        // Should mention the searched term
+        expect(message).toContain('nonexistent');
+
+        // Should list available pages (showing first 3)
+        expect(message).toContain('Example Domain');
+        expect(message).toContain('page1');
+        expect(message).toContain('GitHub');
+        expect(message).toContain('page2');
+
+        // Should suggest using cdp-cli tabs
+        expect(message).toContain('cdp-cli tabs');
+      }
+    });
+
+    it('should show "and N more" when more than 3 pages available', async () => {
+      installMockFetch({
+        pages: [
+          ...samplePages,
+          { id: 'page4', title: 'Page 4', url: 'http://example.com/4', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page4' },
+          { id: 'page5', title: 'Page 5', url: 'http://example.com/5', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page5' }
+        ]
+      });
+
+      const context = new CDPContext();
+
+      try {
+        await context.findPage('nonexistent');
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        const message = (error as Error).message;
+
+        // Should show "and 2 more"
+        expect(message).toContain('and 2 more');
+      }
+    });
   });
 
   describe('connect', () => {

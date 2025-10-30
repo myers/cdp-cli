@@ -84,7 +84,26 @@ export class CDPContext {
     );
 
     if (!page) {
-      throw new Error(`Page not found: ${idOrTitle}`);
+      // Provide helpful error with available pages
+      let errorMsg = `Page not found: '${idOrTitle}'.`;
+
+      if (pages.length > 0) {
+        // Show first 3 pages
+        const displayPages = pages.slice(0, 3);
+        const pageList = displayPages
+          .map(p => `'${p.title}' (${p.id})`)
+          .join(', ');
+        errorMsg += ` Available: ${pageList}`;
+
+        if (pages.length > 3) {
+          errorMsg += `, and ${pages.length - 3} more`;
+        }
+        errorMsg += `.`;
+      }
+
+      errorMsg += ` Use 'cdp-cli tabs' for full list.`;
+
+      throw new Error(errorMsg);
     }
 
     return page;

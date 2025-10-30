@@ -118,7 +118,7 @@ export async function click(
     outputError(
       (error as Error).message,
       'CLICK_FAILED',
-      { selector }
+      { selector, page: options.page }
     );
     process.exit(1);
   } finally {
@@ -176,7 +176,7 @@ export async function fill(
     outputError(
       (error as Error).message,
       'FILL_FAILED',
-      { selector, value }
+      { selector, value, page: options.page }
     );
     process.exit(1);
   } finally {
@@ -234,7 +234,7 @@ export async function pressKey(
     outputError(
       (error as Error).message,
       'PRESS_KEY_FAILED',
-      { key }
+      { key, page: options.page }
     );
     process.exit(1);
   } finally {

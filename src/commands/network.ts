@@ -47,7 +47,8 @@ export async function listNetwork(
   } catch (error) {
     outputError(
       (error as Error).message,
-      'LIST_NETWORK_FAILED'
+      'LIST_NETWORK_FAILED',
+      { page: options.page }
     );
     process.exit(1);
   } finally {
