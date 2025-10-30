@@ -1,6 +1,6 @@
 {
   "name": "@myerscarpenter/cdp-cli",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "CLI for Chrome DevTools Protocol - optimized for LLM agents with NDJSON output",
   "type": "module",
   "bin": {
