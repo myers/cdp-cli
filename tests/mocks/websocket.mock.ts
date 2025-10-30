@@ -84,9 +84,32 @@ export class MockWebSocket extends EventEmitter {
           };
           break;
 
+        case 'DOM.querySelectorAll':
+          result = {
+            nodeIds: [42]
+          };
+          break;
+
         case 'DOM.querySelector':
           result = {
             nodeId: 42
+          };
+          break;
+
+        case 'DOM.resolveNode':
+          result = {
+            object: {
+              objectId: 'object-42'
+            }
+          };
+          break;
+
+        case 'DOM.describeNode':
+          result = {
+            node: {
+              nodeName: 'BUTTON',
+              attributes: ['id', 'submit', 'class', 'btn primary']
+            }
           };
           break;
 
@@ -94,6 +117,25 @@ export class MockWebSocket extends EventEmitter {
           result = {
             model: {
               content: [100, 100, 200, 100, 200, 200, 100, 200]
+            }
+          };
+          break;
+
+        case 'Runtime.callFunctionOn':
+          result = {
+            result: {
+              value: {
+                tagName: 'button',
+                id: 'submit',
+                classes: ['btn', 'primary'],
+                text: 'Submit',
+                rect: {
+                  x: 100,
+                  y: 100,
+                  width: 100,
+                  height: 100
+                }
+              }
             }
           };
           break;

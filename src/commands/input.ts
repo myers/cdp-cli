@@ -2,7 +2,7 @@
  * Input automation commands: click, fill, press-key
  */
 
-import { CDPContext } from '../context.js';
+import { CDPContext, type Page } from '../context.js';
 import { outputError, outputSuccess } from '../output.js';
 
 type TextMatchMode = 'exact' | 'contains' | 'regex';
@@ -580,12 +580,39 @@ async function waitForTargetCandidates(
  */
 export async function click(
   context: CDPContext,
-  target: ClickTargetInput,
-  options: { page: string; double?: boolean; userGesture?: boolean; wait?: number }
+  targetInput: ClickTargetInput | string,
+  optionsInput: { page: string; double?: boolean; userGesture?: boolean; wait?: number }
 ): Promise<void> {
   let ws;
+  const target: ClickTargetInput =
+    typeof targetInput === 'string'
+      ? { selector: targetInput }
+      : { ...targetInput };
+  const options = { ...optionsInput };
+
   try {
-    const page = await context.findPage(options.page);
+    let page: Page;
+    try {
+      page = await context.findPage(options.page);
+    } catch (primaryError) {
+      const candidatePageId = target.selector;
+
+      if (!candidatePageId) {
+        throw primaryError;
+      }
+
+      try {
+        const resolvedPage = await context.findPage(candidatePageId);
+        const originalSelector = options.page;
+
+        options.page = candidatePageId;
+        target.selector = originalSelector;
+        page = resolvedPage;
+      } catch {
+        throw primaryError;
+      }
+    }
+
     ws = await context.connect(page);
 
     await context.sendCommand(ws, 'DOM.enable');

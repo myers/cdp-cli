@@ -67,6 +67,25 @@ describe('Input Commands', () => {
       expect(result.success).toBe(true);
     });
 
+    it('should recover when selector and page arguments are swapped', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      await input.click(
+        context,
+        { selector: 'page1' },
+        { page: '.cta-button' }
+      );
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+      const result = JSON.parse(logs[0]);
+      expect(result.success).toBe(true);
+      expect(result.data.selector).toBe('.cta-button');
+    });
+
     // Note: Element not found error is difficult to test with auto-responding mocks
     // The error handling is validated by the page not found test below
 
