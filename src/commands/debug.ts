@@ -5,6 +5,7 @@
 import { CDPContext, Page } from '../context.js';
 import { outputLines, outputLine, outputError, outputSuccess, outputRaw } from '../output.js';
 import { writeFileSync } from 'fs';
+import { WebSocket } from 'ws';
 
 /**
  * List console messages
@@ -21,7 +22,7 @@ export async function listConsole(
     withSource: boolean;
   }
 ): Promise<void> {
-  let ws;
+  let ws: WebSocket | undefined;
   try {
     // Get page to monitor
     const page = await context.findPage(options.page);
@@ -36,6 +37,55 @@ export async function listConsole(
 
     // Get collected messages
     let messages = context.getConsoleMessages();
+
+    // Fetch object properties for better formatting
+    if (ws) {
+      for (const msg of messages) {
+        if (msg.args && msg.args.length > 0) {
+          const formattedArgs = await Promise.all(
+            msg.args.map(async (arg: any) => {
+              // Primitive values
+              if (arg.value !== undefined) return String(arg.value);
+
+              // Objects with objectId - fetch properties
+              if (arg.objectId && ws) {
+                try {
+                  const props = await context.sendCommand(ws, 'Runtime.getProperties', {
+                    objectId: arg.objectId,
+                    ownProperties: true
+                  });
+
+                  // Format as {key: value, ...}
+                  if (props.result && props.result.length > 0) {
+                    const entries = props.result
+                      .filter((p: any) => p.enumerable !== false)
+                      .slice(0, 10) // Limit to first 10 properties
+                      .map((p: any) => {
+                        const value = p.value?.value !== undefined
+                          ? JSON.stringify(p.value.value)
+                          : (p.value?.description || '...');
+                        return `${p.name}: ${value}`;
+                      })
+                      .join(', ');
+                    const overflow = props.result.length > 10 ? ', ...' : '';
+                    return `{${entries}${overflow}}`;
+                  }
+                } catch (error) {
+                  // Fall back to description if property fetch fails
+                  return arg.description || 'Object';
+                }
+              }
+
+              // Fallback to description
+              return arg.description || JSON.stringify(arg);
+            })
+        );
+
+        // Update message text with formatted args
+        msg.text = formattedArgs.join(' ');
+        }
+      }
+    }
 
     // Filter by type if specified
     if (options.type) {

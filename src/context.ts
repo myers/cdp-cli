@@ -4,6 +4,7 @@
  */
 
 import { WebSocket } from 'ws';
+import { cdpFetch } from './fetch-wrapper.js';
 
 export interface Page {
   id: string;
@@ -66,7 +67,7 @@ export class CDPContext {
    * Get list of all open pages
    */
   async getPages(): Promise<Page[]> {
-    const response = await fetch(`${this.cdpUrl}/json`);
+    const response = await cdpFetch(`${this.cdpUrl}/json`);
     if (!response.ok) {
       throw new Error(`Failed to fetch pages: ${response.statusText}`);
     }
@@ -172,8 +173,13 @@ export class CDPContext {
 
       if (message.method === 'Runtime.consoleAPICalled') {
         const { type, args, timestamp } = message.params;
+
+        // Generate initial text representation (will be enhanced by property fetching in listConsole)
         const text = args.map((arg: any) => {
+          // Primitive values
           if (arg.value !== undefined) return String(arg.value);
+
+          // Fallback to description for objects (will be replaced with actual properties later)
           if (arg.description !== undefined) return arg.description;
           return JSON.stringify(arg);
         }).join(' ');
@@ -296,7 +302,7 @@ export class CDPContext {
    * Close a page
    */
   async closePage(page: Page): Promise<void> {
-    const response = await fetch(`${this.cdpUrl}/json/close/${page.id}`);
+    const response = await cdpFetch(`${this.cdpUrl}/json/close/${page.id}`);
     if (!response.ok) {
       throw new Error(`Failed to close page: ${response.statusText}`);
     }
@@ -310,7 +316,7 @@ export class CDPContext {
       ? `${this.cdpUrl}/json/new?${encodeURIComponent(url)}`
       : `${this.cdpUrl}/json/new`;
 
-    const response = await fetch(endpoint);
+    const response = await cdpFetch(endpoint);
     if (!response.ok) {
       throw new Error(`Failed to create page: ${response.statusText}`);
     }
