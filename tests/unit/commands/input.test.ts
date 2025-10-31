@@ -2,7 +2,7 @@
  * Tests for input automation commands
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as input from '../../../src/commands/input.js';
 import { CDPContext } from '../../../src/context.js';
 import { installMockFetch } from '../../mocks/fetch.mock.js';
@@ -36,6 +36,7 @@ describe('Input Commands', () => {
       expect(result.data.x).toBe(150);
       expect(result.data.y).toBe(150);
       expect(result.data.double).toBe(false);
+      expect(result.data.longpress).toBe(0);
     });
 
     it('should perform double click when requested', async () => {
@@ -49,6 +50,57 @@ describe('Input Commands', () => {
 
       const result = JSON.parse(logs[0]);
       expect(result.data.double).toBe(true);
+      expect(result.data.longpress).toBe(0);
+    });
+
+    it('should perform long press when requested', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+      const originalConnect = context.connect.bind(context);
+      const mouseEvents: any[] = [];
+
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        const originalSend = ws.send.bind(ws);
+        ws.send = (data: string) => {
+          const msg = JSON.parse(data);
+          if (msg.method === 'Input.dispatchMouseEvent') {
+            mouseEvents.push(msg.params);
+          }
+          originalSend(data);
+        };
+
+        return ws;
+      };
+
+      vi.useFakeTimers();
+      try {
+        const clickPromise = input.click(context, 'button', {
+          page: 'page1',
+          longpress: 0.5
+        });
+
+        await vi.runAllTimersAsync();
+        await clickPromise;
+      } finally {
+        vi.useRealTimers();
+      }
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+      const result = JSON.parse(logs[0]);
+
+      expect(result.success).toBe(true);
+      expect(result.data.longpress).toBeCloseTo(0.5, 5);
+
+      const pressedEvents = mouseEvents.filter(event => event.type === 'mousePressed');
+      const releasedEvents = mouseEvents.filter(event => event.type === 'mouseReleased');
+
+      expect(pressedEvents).toHaveLength(1);
+      expect(releasedEvents).toHaveLength(1);
     });
 
     it('should dispatch correct mouse events for single click', async () => {
@@ -84,6 +136,31 @@ describe('Input Commands', () => {
       const result = JSON.parse(logs[0]);
       expect(result.success).toBe(true);
       expect(result.data.selector).toBe('.cta-button');
+    });
+
+    it('should reject double click combined with long press', async () => {
+      const capture = captureConsoleOutput();
+      const exitMock = mockProcessExit();
+      const context = new CDPContext();
+
+      try {
+        await input.click(context, 'button', {
+          page: 'page1',
+          double: true,
+          longpress: 0.2
+        });
+      } catch {
+        // Expected process.exit
+      }
+
+      expect(exitMock.exitCode).toBe(1);
+
+      const error = JSON.parse(capture.getLogs()[0]);
+      expect(error.error).toBe(true);
+      expect(error.code).toBe('CLICK_INVALID_OPTIONS');
+
+      capture.restore();
+      exitMock.restore();
     });
 
     // Note: Element not found error is difficult to test with auto-responding mocks

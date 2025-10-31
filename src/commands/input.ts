@@ -163,6 +163,12 @@ function roundRect(rect: ElementMetadata['rect']): ElementMetadata['rect'] {
   };
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function safeReleaseObject(
   context: CDPContext,
   ws: any,
@@ -311,7 +317,7 @@ function buildTextSearchExpression(
   const results = [];
   const seen = new Set();
   let regex = null;
-  const actionableSelector = 'button,[role="button"],input[type="submit"],input[type="button"],input[type="reset"],input[type="checkbox"],input[type="radio"],a[href],textarea,select,label,summary';
+  const actionableSelector = 'button,[role="button"],li.item,[class*="-btn"],input[type="submit"],input[type="button"],input[type="reset"],input[type="checkbox"],input[type="radio"],a[href],textarea,select,label,summary';
 
   if (mode === 'regex') {
     try {
@@ -581,7 +587,7 @@ async function waitForTargetCandidates(
 export async function click(
   context: CDPContext,
   targetInput: ClickTargetInput | string,
-  optionsInput: { page: string; double?: boolean; userGesture?: boolean; wait?: number }
+  optionsInput: { page: string; double?: boolean; userGesture?: boolean; wait?: number, longpress?: number }
 ): Promise<void> {
   let ws;
   const target: ClickTargetInput =
@@ -589,8 +595,24 @@ export async function click(
       ? { selector: targetInput }
       : { ...targetInput };
   const options = { ...optionsInput };
+  const longpressSeconds =
+    typeof options.longpress === 'number' && Number.isFinite(options.longpress)
+      ? Math.max(0, options.longpress)
+      : 0;
+  const longpressMs = longpressSeconds > 0 ? longpressSeconds * 1000 : 0;
 
   try {
+    if (options.double && longpressSeconds > 0) {
+      throw new ClickError(
+        'Double click cannot be combined with long press',
+        'CLICK_INVALID_OPTIONS',
+        {
+          double: options.double,
+          longpress: longpressSeconds
+        }
+      );
+    }
+
     let page: Page;
     try {
       page = await context.findPage(options.page);
@@ -791,6 +813,10 @@ export async function click(
         clickCount: 1
       });
 
+      if (longpressMs > 0) {
+        await delay(longpressMs);
+      }
+
       await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
         type: 'mouseReleased',
         x,
@@ -829,7 +855,8 @@ export async function click(
         x: xRounded,
         y: yRounded,
         rect: roundedRect,
-        double: options.double || false
+        double: options.double || false,
+        longpress: longpressSeconds
       });
     }
   } catch (error) {

@@ -373,5 +373,41 @@ describe('CDPContext', () => {
       const context = new CDPContext();
       await expect(context.createPage()).rejects.toThrow('Failed to create page');
     });
+
+    it('should construct endpoint without encoding protocol delimiters', async () => {
+      const calls: any[] = [];
+      const fetchStub = async (input: any, init?: any) => {
+        calls.push([input, init]);
+        return {
+          ok: true,
+          async json() {
+            return {
+              id: 'new-page-123',
+              title: 'New Tab',
+              url: 'http://localhost:3001/path with space',
+              type: 'page',
+              webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/new-page-123'
+            };
+          }
+        } as any;
+      };
+
+      const originalFetch = (global as any).fetch;
+      (global as any).fetch = fetchStub;
+
+      try {
+        const context = new CDPContext();
+        await context.createPage('http://localhost:3001/path with space#section');
+
+        expect(calls).toEqual([
+          [
+            'http://localhost:9222/json/new?http://localhost:3001/path%20with%20space%23section',
+            { method: 'PUT' }
+          ]
+        ]);
+      } finally {
+        (global as any).fetch = originalFetch;
+      }
+    });
   });
 });

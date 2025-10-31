@@ -395,6 +395,20 @@ cli.command(
         description: 'Wait timeout in ms for selector to appear',
         alias: 'w'
       })
+      .option('longpress', {
+        type: 'number',
+        description: 'Hold mouse button for N seconds before release',
+        coerce: (value: unknown) => {
+          if (value === undefined || value === null || value === '') {
+            return undefined;
+          }
+          const num = Number(value);
+          if (!Number.isFinite(num) || num < 0) {
+            throw new Error('--longpress must be a non-negative number');
+          }
+          return num;
+        }
+      })
       .option('text', {
         type: 'string',
         description: 'Match element by visible text instead of CSS selector'
@@ -438,6 +452,13 @@ cli.command(
         if (providedCount > 1) {
           throw new Error('CSS selector, --text, and --node are mutually exclusive');
         }
+        if (
+          argv.double === true &&
+          typeof argv.longpress === 'number' &&
+          argv.longpress > 0
+        ) {
+          throw new Error('--double cannot be combined with --longpress');
+        }
         return true;
       });
   },
@@ -458,6 +479,7 @@ cli.command(
         double: argv.double as boolean,
         userGesture: argv['user-gesture'] as boolean,
         wait: argv.wait as number | undefined,
+        longpress: argv.longpress as number | undefined
       }
     );
   }
