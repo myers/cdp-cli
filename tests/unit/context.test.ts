@@ -19,7 +19,7 @@ describe('CDPContext', () => {
       const context = new CDPContext();
       const pages = await context.getPages();
 
-      expect(pages).toHaveLength(3);
+      expect(pages).toHaveLength(4);
       expect(pages[0].id).toBe('page1');
       expect(pages[0].title).toBe('Example Domain');
       expect(pages[0].type).toBe('page');
@@ -42,7 +42,7 @@ describe('CDPContext', () => {
       const context = new CDPContext();
       const pages = await context.getPages();
 
-      expect(pages).toHaveLength(3);
+      expect(pages).toHaveLength(4);
       expect(pages.every(p => p.type === 'page')).toBe(true);
     });
 
@@ -63,12 +63,17 @@ describe('CDPContext', () => {
       expect(page.title).toBe('GitHub');
     });
 
-    it('should find page by partial title', async () => {
+    it('should find page by partial title when unique', async () => {
       const context = new CDPContext();
-      const page = await context.findPage('Hub');
+      const page = await context.findPage('Goog');
 
-      expect(page.id).toBe('page2');
-      expect(page.title).toBe('GitHub');
+      expect(page.id).toBe('page3');
+      expect(page.title).toBe('Google');
+    });
+
+    it('should throw error when multiple pages match', async () => {
+      const context = new CDPContext();
+      await expect(context.findPage('GitHub')).rejects.toThrow('Multiple pages matched');
     });
 
     it('should throw error if page not found', async () => {

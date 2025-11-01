@@ -18,6 +18,13 @@ export const samplePages = [
     webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page2'
   },
   {
+    id: 'page4',
+    title: 'GitHub Issues',
+    url: 'https://github.com/issues',
+    type: 'page',
+    webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page4'
+  },
+  {
     id: 'page3',
     title: 'Google',
     url: 'https://google.com',
@@ -196,3 +203,4 @@ export const accessibilityResponses = {
     ]
   }
 };
+
