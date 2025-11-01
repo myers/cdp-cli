@@ -397,10 +397,16 @@ cli.command(
       })
       .option('longpress', {
         type: 'number',
-        description: 'Hold mouse button for N seconds before release',
+        description: 'Hold mouse button for N seconds before release (defaults to 1 when flag is present without a value)',
         coerce: (value: unknown) => {
-          if (value === undefined || value === null || value === '') {
+          if (value === true) {
+            return 1;
+          }
+          if (value === undefined || value === null) {
             return undefined;
+          }
+          if (value === '') {
+            return 1;
           }
           const num = Number(value);
           if (!Number.isFinite(num) || num < 0) {

@@ -229,13 +229,14 @@ cdp-cli network "example" --duration 5 --type fetch
 ### Input Automation
 
 **click** - Click an element by CSS selector or visible text
-Supports `--text`, `--match exact|contains|regex`, `--case-sensitive`, and `--nth` for multi-match disambiguation. Use `--longpress <seconds>` to hold the primary button before release (not compatible with `--double`). When multiple elements match, the CLI reports each candidate (including bounding boxes) so an LLM can choose the right target with `--nth`.
+Supports `--text`, `--match exact|contains|regex`, `--case-sensitive`, and `--nth` for multi-match disambiguation. Use `--longpress <seconds>` to hold the primary button before release (defaults to 1 second when the flag is provided without a value; not compatible with `--double`). When multiple elements match, the CLI reports each candidate (including bounding boxes) so an LLM can choose the right target with `--nth`.
 ```bash
 
 # CSS selector (default behaviour)
 cdp-cli click "example" "button#submit"
 cdp-cli click "example" "a.link" --double
 cdp-cli click "example" "li.menu-item" --longpress 0.75
+cdp-cli click "example" "li.menu-item" --longpress        # defaults to 1 second
 
 # Use --user-gesture for WebXR, fullscreen, and other activation-gated APIs
 cdp-cli click "example" "button#enter-vr" --user-gesture
