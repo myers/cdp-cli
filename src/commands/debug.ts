@@ -355,7 +355,7 @@ export async function evaluate(
  */
 export async function screenshot(
   context: CDPContext,
-  options: { output: string; format?: string; page: string; quality?: number }
+  options: { output: string; format?: string; page: string; quality?: number; scale?: number }
 ): Promise<void> {
   let ws;
   try {
@@ -371,11 +371,42 @@ export async function screenshot(
     }
 
     const quality = options.quality || 90;
+    const scale = options.scale ?? 1;
 
-    const result = await context.sendCommand(ws, 'Page.captureScreenshot', {
+    if (scale <= 0 || scale > 1) {
+      throw new Error(`Invalid scale: ${scale}. Must be between 0 (exclusive) and 1 (inclusive).`);
+    }
+
+    const captureParams: Record<string, any> = {
       format,
       quality: format === 'jpeg' ? quality : undefined
-    });
+    };
+
+    if (scale !== 1) {
+      const layoutMetrics = await context.sendCommand(ws, 'Page.getLayoutMetrics');
+      const width =
+        layoutMetrics?.cssContentSize?.width ??
+        layoutMetrics?.contentSize?.width ??
+        layoutMetrics?.layoutViewport?.clientWidth;
+      const height =
+        layoutMetrics?.cssContentSize?.height ??
+        layoutMetrics?.contentSize?.height ??
+        layoutMetrics?.layoutViewport?.clientHeight;
+
+      if (!width || !height) {
+        throw new Error('Unable to determine page dimensions for scaling.');
+      }
+
+      captureParams.clip = {
+        x: 0,
+        y: 0,
+        width,
+        height,
+        scale
+      };
+    }
+
+    const result = await context.sendCommand(ws, 'Page.captureScreenshot', captureParams);
 
     // Save to file
     const buffer = Buffer.from(result.data, 'base64');

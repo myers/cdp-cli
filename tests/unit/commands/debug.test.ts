@@ -875,6 +875,70 @@ describe('Debug Commands', () => {
       capture.restore();
     });
 
+    it('should scale screenshot when scale provided', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      const sentCommands: any[] = [];
+
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+        const originalSend = ws.send.bind(ws);
+        ws.send = (data: string) => {
+          const message = JSON.parse(data);
+          sentCommands.push(message);
+          originalSend(data);
+        };
+        return ws;
+      };
+
+      await debug.screenshot(context, {
+        page: 'page1',
+        output: '/tmp/scaled.jpg',
+        format: 'jpeg',
+        quality: 90,
+        scale: 0.5
+      });
+
+      expect(writeFileSync).toHaveBeenCalled();
+      const writeCalls = (writeFileSync as any).mock.calls;
+      const lastWriteCall = writeCalls[writeCalls.length - 1];
+      expect(lastWriteCall[0]).toBe('/tmp/scaled.jpg');
+
+      const metricsCommand = sentCommands.find(msg => msg.method === 'Page.getLayoutMetrics');
+      expect(metricsCommand).toBeDefined();
+
+      const screenshotCommand = sentCommands.find(msg => msg.method === 'Page.captureScreenshot');
+      expect(screenshotCommand).toBeDefined();
+      expect(screenshotCommand.params.clip.scale).toBe(0.5);
+      expect(screenshotCommand.params.clip.width).toBeGreaterThan(0);
+      expect(screenshotCommand.params.clip.height).toBeGreaterThan(0);
+
+      capture.restore();
+    });
+
+    it('should validate scale range', async () => {
+      const capture = captureConsoleOutput();
+      const exitMock = mockProcessExit();
+      const context = new CDPContext();
+
+      try {
+        await debug.screenshot(context, { page: 'page1', scale: 1.5 });
+      } catch (e) {
+        // Expected process.exit
+      }
+
+      expect(exitMock.exitCode).toBe(1);
+      const error = JSON.parse(capture.getLogs()[0]);
+      expect(error.error).toBe(true);
+      expect(error.code).toBe('SCREENSHOT_FAILED');
+      expect(error.message).toContain('Invalid scale');
+
+      capture.restore();
+      exitMock.restore();
+    });
+
     it('should handle page not found error', async () => {
       const capture = captureConsoleOutput();
       const exitMock = mockProcessExit();

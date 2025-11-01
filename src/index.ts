@@ -150,6 +150,7 @@ cli.command(
   }
 );
 
+
 // Launch command
 cli.command(
   'launch',
@@ -164,6 +165,57 @@ cli.command(
   async (argv) => {
     const port = (argv.port as number | undefined) ?? getDefaultPort();
     await launch.launchChrome({ port });
+  }
+);
+
+cli.command(
+  'resize-window <page> <width> <height>',
+  'Resize the Chrome window containing the specified page',
+  (yargs) => {
+    return yargs
+      .positional('page', {
+        describe: 'Page ID or title',
+        type: 'string'
+      })
+      .positional('width', {
+        describe: 'Window width in pixels',
+        type: 'number',
+        coerce: (value: unknown) => {
+          const num = Number(value);
+          if (!Number.isFinite(num) || num <= 0) {
+            throw new Error('Width must be a positive number');
+          }
+          return num;
+        }
+      })
+      .positional('height', {
+        describe: 'Window height in pixels',
+        type: 'number',
+        coerce: (value: unknown) => {
+          const num = Number(value);
+          if (!Number.isFinite(num) || num <= 0) {
+            throw new Error('Height must be a positive number');
+          }
+          return num;
+        }
+      })
+      .option('state', {
+        type: 'string',
+        description: 'Window state (normal, maximized, minimized, fullscreen)',
+        choices: ['normal', 'maximized', 'minimized', 'fullscreen'] as const
+      });
+  },
+  async (argv) => {
+    const context = new CDPContext(argv['cdp-url'] as string);
+    await pages.resizeWindow(
+      context,
+      argv.page as string,
+      {
+        width: argv.width as number,
+        height: argv.height as number,
+        state: argv.state as 'normal' | 'maximized' | 'minimized' | 'fullscreen' | undefined
+      }
+    );
   }
 );
 
@@ -314,6 +366,11 @@ cli.command(
         description: 'JPEG quality (0-100)',
         alias: 'q',
         default: 90
+      })
+      .option('scale', {
+        type: 'number',
+        description: 'Scale factor to resize the image (0 < scale <= 1)',
+        alias: 's'
       });
   },
   async (argv) => {
@@ -322,6 +379,7 @@ cli.command(
       output: argv.output as string,
       format: argv.format as string,
       quality: argv.quality as number,
+      scale: argv.scale as number | undefined,
       page: argv.page as string
     });
   }

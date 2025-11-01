@@ -176,6 +176,21 @@ export class MockWebSocket extends EventEmitter {
           };
           break;
 
+        case 'Page.getLayoutMetrics':
+          result = {
+            layoutViewport: {
+              pageX: 0,
+              pageY: 0,
+              clientWidth: 1280,
+              clientHeight: 720
+            },
+            cssContentSize: {
+              width: 1280,
+              height: 720
+            }
+          };
+          break;
+
         case 'Runtime.evaluate':
           result = {
             result: {
@@ -219,6 +234,21 @@ export class MockWebSocket extends EventEmitter {
           result = {
             nodes: []
           };
+          break;
+
+        case 'Browser.getWindowForTarget':
+          result = {
+            windowId: 101,
+            bounds: {
+              windowState: 'normal',
+              width: 1280,
+              height: 720
+            }
+          };
+          break;
+
+        case 'Browser.setWindowBounds':
+          result = {};
           break;
 
         default:
