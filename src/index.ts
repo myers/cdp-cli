@@ -236,9 +236,9 @@ cli.command(
       })
       .option('duration', {
         type: 'number',
-        description: 'Collection duration in seconds',
+        description: 'Collection duration in seconds (0 to stream until interrupted)',
         alias: 'd',
-        default: 0.1
+        default: 0
       })
       .option('tail', {
         type: 'number',
@@ -402,9 +402,9 @@ cli.command(
       })
       .option('duration', {
         type: 'number',
-        description: 'Collection duration in seconds',
+        description: 'Collection duration in seconds (0 to stream until interrupted)',
         alias: 'd',
-        default: 0.1
+        default: 0
       });
   },
   async (argv) => {

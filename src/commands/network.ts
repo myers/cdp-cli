@@ -2,48 +2,69 @@
  * Network inspection commands
  */
 
-import { CDPContext, Page } from '../context.js';
-import { outputLines, outputLine, outputError } from '../output.js';
+import { CDPContext, NetworkRequest } from '../context.js';
+import { outputLine, outputError } from '../output.js';
 
 /**
  * List network requests
  */
 export async function listNetwork(
   context: CDPContext,
-  options: { type?: string; page: string; duration: number }
+  options: { type?: string; page: string; duration?: number }
 ): Promise<void> {
   let ws;
+  const duration = options.duration ?? 0;
   try {
     // Get page to monitor
     const page = await context.findPage(options.page);
 
     // Connect and enable Network domain
     ws = await context.connect(page);
-    context.setupNetworkCollection(ws);
+    context.setupNetworkCollection(
+      ws,
+      (request: NetworkRequest, event) => {
+        if (options.type && request.type !== options.type) {
+          return;
+        }
+
+        outputLine({
+          event,
+          url: request.url,
+          method: request.method,
+          ...(request.status !== undefined && { status: request.status }),
+          ...(request.type && { type: request.type }),
+          ...(request.size !== undefined && { size: request.size }),
+          timestamp: request.timestamp
+        });
+      }
+    );
     await context.sendCommand(ws, 'Network.enable');
 
-    // Collect for specified duration (in milliseconds)
-    await new Promise(resolve => setTimeout(resolve, options.duration * 1000));
+    if (duration > 0) {
+      await new Promise(resolve => setTimeout(resolve, duration * 1000));
+    } else {
+      await new Promise<void>((resolve) => {
+        function cleanup(): void {
+          process.off('SIGINT', onSigint);
+          process.off('SIGTERM', onSigterm);
+        }
 
-    // Get collected requests
-    let requests = context.getNetworkRequests();
+        function onSigint(): void {
+          process.exitCode = 130;
+          cleanup();
+          resolve();
+        }
 
-    // Filter by type if specified
-    if (options.type) {
-      requests = requests.filter(r => r.type === options.type);
+        function onSigterm(): void {
+          process.exitCode = 143;
+          cleanup();
+          resolve();
+        }
+
+        process.on('SIGINT', onSigint);
+        process.on('SIGTERM', onSigterm);
+      });
     }
-
-    // Output as NDJSON
-    const output = requests.map(req => ({
-      url: req.url,
-      method: req.method,
-      ...(req.status && { status: req.status }),
-      ...(req.type && { type: req.type }),
-      ...(req.size && { size: req.size }),
-      timestamp: req.timestamp
-    }));
-
-    outputLines(output);
   } catch (error) {
     outputError(
       (error as Error).message,

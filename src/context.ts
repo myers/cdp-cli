@@ -184,7 +184,7 @@ export class CDPContext {
   /**
    * Setup console message collection
    */
-  setupConsoleCollection(ws: WebSocket): void {
+  setupConsoleCollection(ws: WebSocket, onMessage?: (message: ConsoleMessage) => void): void {
     ws.on('message', (data: Buffer) => {
       const message: CDPMessage = JSON.parse(data.toString());
 
@@ -211,6 +211,9 @@ export class CDPContext {
         };
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
+        if (onMessage) {
+          onMessage(consoleMsg);
+        }
       }
 
       if (message.method === 'Runtime.exceptionThrown') {
@@ -234,6 +237,9 @@ export class CDPContext {
         };
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
+        if (onMessage) {
+          onMessage(consoleMsg);
+        }
       }
     });
   }
@@ -241,68 +247,77 @@ export class CDPContext {
   /**
    * Setup network request collection
    */
-  setupNetworkCollection(ws: WebSocket): void {
-    // Local map for assembling multi-event request data before final storage
-    const requests = new Map<string, Partial<NetworkRequest>>();
+  setupNetworkCollection(
+    ws: WebSocket,
+    onRequest?: (
+      request: NetworkRequest,
+      event: 'requestWillBeSent' | 'responseReceived' | 'loadingFinished'
+    ) => void
+  ): void {
+    const updateRequest = (requestId: string, patch: Partial<NetworkRequest>): NetworkRequest => {
+      const current = this.networkRequests.get(requestId);
+
+      const next: NetworkRequest = {
+        id: requestId,
+        url: patch.url ?? current?.url ?? '',
+        method: patch.method ?? current?.method ?? 'GET',
+        timestamp: patch.timestamp ?? current?.timestamp ?? Date.now(),
+        type: patch.type ?? current?.type,
+        status: patch.status ?? current?.status,
+        size: patch.size ?? current?.size,
+        requestHeaders: patch.requestHeaders ?? current?.requestHeaders,
+        responseHeaders: patch.responseHeaders ?? current?.responseHeaders
+      };
+
+      this.networkRequests.set(requestId, next);
+      return next;
+    };
+
+    const emit = (
+      requestId: string,
+      event: 'requestWillBeSent' | 'responseReceived' | 'loadingFinished'
+    ): void => {
+      if (!onRequest) {
+        return;
+      }
+      const entry = this.networkRequests.get(requestId);
+      if (entry) {
+        onRequest({ ...entry }, event);
+      }
+    };
 
     ws.on('message', (data: Buffer) => {
       const message: CDPMessage = JSON.parse(data.toString());
 
       if (message.method === 'Network.requestWillBeSent') {
         const { requestId, request, timestamp, type } = message.params;
-        const existing = requests.get(requestId);
-
-        if (existing) {
-          // Update existing request (in case responseReceived arrived first)
-          existing.url = request.url;
-          existing.method = request.method;
-          existing.timestamp = timestamp * 1000;
-          existing.type = type;
-          existing.requestHeaders = request.headers;
-        } else {
-          requests.set(requestId, {
-            id: requestId,
-            url: request.url,
-            method: request.method,
-            timestamp: timestamp * 1000,
-            type: type,
-            requestHeaders: request.headers
-          });
-        }
+        updateRequest(requestId, {
+          url: request.url,
+          method: request.method,
+          timestamp: timestamp * 1000,
+          type,
+          requestHeaders: request.headers
+        });
+        emit(requestId, 'requestWillBeSent');
       }
 
       if (message.method === 'Network.responseReceived') {
-        const { requestId, response } = message.params;
-        let req = requests.get(requestId);
-
-        // Handle race condition: responseReceived can arrive before requestWillBeSent
-        if (!req) {
-          req = {
-            id: requestId,
-            url: response.url || '',
-            method: 'GET', // Default, will be updated if requestWillBeSent arrives
-            timestamp: Date.now()
-          };
-          requests.set(requestId, req);
-        }
-
-        req.status = response.status;
-        req.responseHeaders = response.headers;
-
-        // Calculate size if available
-        if (response.encodedDataLength !== undefined) {
-          req.size = response.encodedDataLength;
-        }
-
-        this.networkRequests.set(requestId, req as NetworkRequest);
+        const { requestId, response, type } = message.params;
+        updateRequest(requestId, {
+          url: response.url || '',
+          status: response.status,
+          responseHeaders: response.headers,
+          type: type ?? undefined
+        });
+        emit(requestId, 'responseReceived');
       }
 
       if (message.method === 'Network.loadingFinished') {
         const { requestId, encodedDataLength } = message.params;
-        const req = this.networkRequests.get(requestId);
-        if (req) {
-          req.size = encodedDataLength;
-        }
+        updateRequest(requestId, {
+          size: encodedDataLength
+        });
+        emit(requestId, 'loadingFinished');
       }
     });
   }
