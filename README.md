@@ -126,6 +126,12 @@ cdp-cli close "example"
 cdp-cli close A1B2C3
 ```
 
+**resize-window** - Resize the Chrome window for a page
+```bash
+cdp-cli resize-window "example" 1280 720
+cdp-cli resize-window A1B2C3 1440 900 --state maximized
+```
+
 ### Debugging
 
 **console** - List console messages (minimal output by default, optimized for LLM token savings)
@@ -204,9 +210,18 @@ cdp-cli screenshot "example" --output screenshot.jpg
 # Different formats
 cdp-cli screenshot "example" --output screenshot.png --format png
 
+# Downscale before saving (50% size)
+cdp-cli screenshot "example" --output screenshot.png --scale 0.5
+
 # Output base64 (NDJSON)
 cdp-cli screenshot "example"
 ```
+
+Optional flags:
+- `--output, -o`: Save to file instead of emitting base64
+- `--format, -f`: Choose `jpeg`, `png`, or `webp`
+- `--quality, -q`: JPEG quality (0-100)
+- `--scale, -s`: Downscale width and height by the factor (`0 < scale <= 1`)
 
 ### Network Inspection
 
