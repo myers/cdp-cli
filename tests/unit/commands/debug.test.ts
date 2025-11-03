@@ -875,6 +875,75 @@ describe('Debug Commands', () => {
       capture.restore();
     });
 
+    it.each([
+      ['/tmp/output.png', 'png'],
+      ['/tmp/output.PNG', 'png'],
+      ['/tmp/output.jpg', 'jpeg'],
+      ['/tmp/output.jpeg', 'jpeg'],
+      ['/tmp/output.webp', 'webp'],
+      ['C:\\restaurant\\error_screenshot.png', 'png']
+    ])('should infer screenshot format from output extension %s', async (output, expectedFormat) => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      const sentCommands: any[] = [];
+
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+        const originalSend = ws.send.bind(ws);
+        ws.send = (data: string) => {
+          const message = JSON.parse(data);
+          if (message.method === 'Page.captureScreenshot') {
+            sentCommands.push(message);
+          }
+          originalSend(data);
+        };
+        return ws;
+      };
+
+      await debug.screenshot(context, { page: 'page1', output });
+
+      const screenshotCommand = sentCommands[0];
+      expect(screenshotCommand).toBeDefined();
+      expect(screenshotCommand.params.format).toBe(expectedFormat);
+
+      const calls = (writeFileSync as any).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toBe(output);
+
+      capture.restore();
+    });
+
+    it('should default to jpeg when output extension is unrecognized', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      const sentCommands: any[] = [];
+
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+        const originalSend = ws.send.bind(ws);
+        ws.send = (data: string) => {
+          const message = JSON.parse(data);
+          if (message.method === 'Page.captureScreenshot') {
+            sentCommands.push(message);
+          }
+          originalSend(data);
+        };
+        return ws;
+      };
+
+      await debug.screenshot(context, { page: 'page1', output: '/tmp/output.tiff' });
+
+      const screenshotCommand = sentCommands[0];
+      expect(screenshotCommand).toBeDefined();
+      expect(screenshotCommand.params.format).toBe('jpeg');
+
+      capture.restore();
+    });
+
     it('should scale screenshot when scale provided', async () => {
       const capture = captureConsoleOutput();
       const context = new CDPContext();

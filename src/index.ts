@@ -357,9 +357,8 @@ cli.command(
       })
       .option('format', {
         type: 'string',
-        description: 'Image format (jpeg, png, webp)',
-        alias: 'f',
-        default: 'jpeg'
+        description: 'Image format (jpeg, png, webp). Defaults to the output file extension when available.',
+        alias: 'f'
       })
       .option('quality', {
         type: 'number',
