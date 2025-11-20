@@ -457,17 +457,11 @@ export async function screenshot(
 
     if (scale !== 1) {
       const layoutMetrics = await context.sendCommand(ws, 'Page.getLayoutMetrics');
-      const width =
-        layoutMetrics?.cssContentSize?.width ??
-        layoutMetrics?.contentSize?.width ??
-        layoutMetrics?.layoutViewport?.clientWidth;
-      const height =
-        layoutMetrics?.cssContentSize?.height ??
-        layoutMetrics?.contentSize?.height ??
-        layoutMetrics?.layoutViewport?.clientHeight;
+      const width = layoutMetrics?.cssVisualViewport ?.clientWidth;
+      const height = layoutMetrics?.cssVisualViewport ?.clientHeight;
 
       if (!width || !height) {
-        throw new Error('Unable to determine page dimensions for scaling.');
+        throw new Error('Unable to determine viewport dimensions for scaling.');
       }
 
       captureParams.clip = {
