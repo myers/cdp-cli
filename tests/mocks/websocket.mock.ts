@@ -178,7 +178,7 @@ export class MockWebSocket extends EventEmitter {
 
         case 'Page.getLayoutMetrics':
           result = {
-            layoutViewport: {
+            cssVisualViewport: {
               pageX: 0,
               pageY: 0,
               clientWidth: 1280,
