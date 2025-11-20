@@ -938,34 +938,149 @@ export async function pressKey(
 
     ws = await context.connect(page);
 
-    // Map common key names
+    // Map common key names to their proper key values
     const keyMap: Record<string, string> = {
       'enter': 'Enter',
+      'return': 'Enter',
       'tab': 'Tab',
       'escape': 'Escape',
+      'esc': 'Escape',
       'backspace': 'Backspace',
       'delete': 'Delete',
       'arrowup': 'ArrowUp',
       'arrowdown': 'ArrowDown',
       'arrowleft': 'ArrowLeft',
       'arrowright': 'ArrowRight',
-      'space': ' '
+      'space': ' ',
+      'pageup': 'PageUp',
+      'pagedown': 'PageDown',
+      'home': 'Home',
+      'end': 'End',
+      'insert': 'Insert'
     };
 
-    const keyValue = keyMap[key.toLowerCase()] || key;
+    // Parse modifiers from key string (e.g., "Ctrl+a", "Shift+Enter")
+    const parts = key.split('+').map(p => p.trim());
+    const modifiers = {
+      shift: false,
+      ctrl: false,
+      alt: false,
+      meta: false
+    };
 
-    await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+    let mainKey = parts[parts.length - 1];
+
+    // Process modifier keys
+    for (let i = 0; i < parts.length - 1; i++) {
+      const mod = parts[i].toLowerCase();
+      if (mod === 'shift') modifiers.shift = true;
+      else if (mod === 'ctrl' || mod === 'control') modifiers.ctrl = true;
+      else if (mod === 'alt' || mod === 'option') modifiers.alt = true;
+      else if (mod === 'meta' || mod === 'cmd' || mod === 'command') modifiers.meta = true;
+    }
+
+    // Map key name to proper value
+    const keyValue = keyMap[mainKey.toLowerCase()] || mainKey;
+
+    // Determine if this is a printable character
+    const isPrintable = keyValue.length === 1;
+    const text = isPrintable ? keyValue : undefined;
+
+    // Press modifier keys first
+    if (modifiers.ctrl) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Control',
+        modifiers: 2
+      });
+    }
+    if (modifiers.alt) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Alt',
+        modifiers: 1
+      });
+    }
+    if (modifiers.shift) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Shift',
+        modifiers: 8
+      });
+    }
+    if (modifiers.meta) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Meta',
+        modifiers: 4
+      });
+    }
+
+    // Calculate modifier bitmask
+    let modifierBits = 0;
+    if (modifiers.alt) modifierBits |= 1;
+    if (modifiers.ctrl) modifierBits |= 2;
+    if (modifiers.meta) modifierBits |= 4;
+    if (modifiers.shift) modifierBits |= 8;
+
+    // Press the main key
+    const keyDownEvent: any = {
       type: 'keyDown',
       key: keyValue
-    });
+    };
+    if (text !== undefined) {
+      keyDownEvent.text = text;
+    }
+    if (modifierBits > 0) {
+      keyDownEvent.modifiers = modifierBits;
+    }
 
-    await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+    await context.sendCommand(ws, 'Input.dispatchKeyEvent', keyDownEvent);
+
+    const keyUpEvent: any = {
       type: 'keyUp',
       key: keyValue
-    });
+    };
+    if (modifierBits > 0) {
+      keyUpEvent.modifiers = modifierBits;
+    }
+
+    await context.sendCommand(ws, 'Input.dispatchKeyEvent', keyUpEvent);
+
+    // Release modifier keys in reverse order
+    if (modifiers.meta) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Meta',
+        modifiers: 0
+      });
+    }
+    if (modifiers.shift) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Shift',
+        modifiers: 0
+      });
+    }
+    if (modifiers.alt) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Alt',
+        modifiers: 0
+      });
+    }
+    if (modifiers.ctrl) {
+      await context.sendCommand(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Control',
+        modifiers: 0
+      });
+    }
 
     outputSuccess('Key pressed', {
-      key: keyValue
+      key: keyValue,
+      text: text ?? null,
+      modifiers: modifierBits > 0 ? modifiers : null
     });
   } catch (error) {
     outputError(
