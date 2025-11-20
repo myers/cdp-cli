@@ -23,7 +23,7 @@ export async function listNetwork(
     context.setupNetworkCollection(
       ws,
       (request: NetworkRequest, event) => {
-        if (options.type && request.type !== options.type) {
+        if (options.type && request.type?.toLowerCase() !== options.type.toLowerCase()) {
           return;
         }
 

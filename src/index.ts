@@ -396,7 +396,7 @@ cli.command(
       })
       .option('type', {
         type: 'string',
-        description: 'Filter by request type (xhr, fetch, script, etc)',
+        description: 'Filter by request type (xhr, fetch, script, image, document, preflight, ping, font, stylesheet, other)',
         alias: 't'
       })
       .option('duration', {
