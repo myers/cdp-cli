@@ -142,3 +142,63 @@ export async function closePage(
     process.exit(1);
   }
 }
+
+/**
+ * Resize the browser window
+ */
+export async function resizeWindow(
+    context: CDPContext,
+    pageIdOrTitle: string,
+    options: {
+        width?: number;
+        height?: number;
+        state?: 'normal' | 'maximized' | 'minimized' | 'fullscreen';
+    }
+): Promise<void> {
+    let ws;
+    try {
+        // Get page
+        const page = await context.findPage(pageIdOrTitle);
+        // Connect to page
+        ws = await context.connect(page);
+        // Get the window ID for this page
+        const { windowId } = await context.sendCommand(ws, 'Browser.getWindowForTarget', {
+            targetId: page.id
+        });
+        // Build the bounds object based on provided options
+        const bounds: {
+            width?: number;
+            height?: number;
+            windowState?: 'normal' | 'maximized' | 'minimized' | 'fullscreen';
+        } = {};
+        if (options.width !== undefined) {
+            bounds.width = options.width;
+        }
+        if (options.height !== undefined) {
+            bounds.height = options.height;
+        }
+        if (options.state !== undefined) {
+            bounds.windowState = options.state;
+        }
+        // Set the window bounds
+        await context.sendCommand(ws, 'Browser.setWindowBounds', {
+            windowId,
+            bounds
+        });
+        outputSuccess('Window resized', {
+            windowId,
+            bounds
+        });
+    } catch (error) {
+        outputError(
+            (error as Error).message,
+            'RESIZE_WINDOW_FAILED',
+            { page: pageIdOrTitle, options }
+        );
+        process.exit(1);
+    } finally {
+        if (ws) {
+            ws.close();
+        }
+    }
+}
