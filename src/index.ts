@@ -475,7 +475,8 @@ cli.command(
       })
       .option('text', {
         type: 'string',
-        description: 'Match element by visible text instead of CSS selector'
+        description: 'Match element by visible text instead of CSS selector',
+        alias: 't'
       })
       .option('match', {
         type: 'string',
