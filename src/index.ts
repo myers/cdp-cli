@@ -418,7 +418,7 @@ cli.command(
 
 // Input commands
 cli.command(
-  'click <page> [selector]',
+  'click <page>',
   'Click an element',
   (yargs) => {
     return yargs
@@ -426,9 +426,10 @@ cli.command(
         describe: 'Page ID or title',
         type: 'string'
       })
-      .positional('selector', {
-        describe: 'CSS selector (or use --node)',
-        type: 'string'
+      .option('selector', {
+        type: 'string',
+        description: 'CSS selector to match element',
+        alias: 's'
       })
       .option('node', {
         type: 'number',

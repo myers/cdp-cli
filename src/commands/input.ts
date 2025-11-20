@@ -613,27 +613,7 @@ export async function click(
       );
     }
 
-    let page: Page;
-    try {
-      page = await context.findPage(options.page);
-    } catch (primaryError) {
-      const candidatePageId = target.selector;
-
-      if (!candidatePageId) {
-        throw primaryError;
-      }
-
-      try {
-        const resolvedPage = await context.findPage(candidatePageId);
-        const originalSelector = options.page;
-
-        options.page = candidatePageId;
-        target.selector = originalSelector;
-        page = resolvedPage;
-      } catch {
-        throw primaryError;
-      }
-    }
+    const page = await context.findPage(options.page);
 
     ws = await context.connect(page);
 
