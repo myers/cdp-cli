@@ -72,7 +72,7 @@ Or start Chrome manually:
 google-chrome --remote-debugging-port=9222
 
 # Windows
-chrome.exe --remote-debugging-port=9222
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
 ```
 
 ## Output Format: NDJSON
