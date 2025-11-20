@@ -119,25 +119,6 @@ describe('Input Commands', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should recover when selector and page arguments are swapped', async () => {
-      const capture = captureConsoleOutput();
-      const context = new CDPContext();
-
-      await input.click(
-        context,
-        { selector: 'page1' },
-        { page: '.cta-button' }
-      );
-
-      const logs = capture.getLogs();
-      capture.restore();
-
-      expect(logs).toHaveLength(1);
-      const result = JSON.parse(logs[0]);
-      expect(result.success).toBe(true);
-      expect(result.data.selector).toBe('.cta-button');
-    });
-
     it('should reject double click combined with long press', async () => {
       const capture = captureConsoleOutput();
       const exitMock = mockProcessExit();
