@@ -377,13 +377,20 @@ cli.command(
         description: 'Perform double click',
         alias: 'd',
         default: false
+      })
+      .option('user-gesture', {
+        type: 'boolean',
+        description: 'Use user gesture activation (required for WebXR, fullscreen, etc.)',
+        alias: 'g',
+        default: false
       });
   },
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
     await input.click(context, argv.selector as string, {
       page: argv.page as string,
-      double: argv.double as boolean
+      double: argv.double as boolean,
+      userGesture: argv['user-gesture'] as boolean
     });
   }
 );

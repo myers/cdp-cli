@@ -6,6 +6,33 @@ Command-line interface for Chrome DevTools Protocol (CDP), optimized for LLM age
 
 `cdp-cli` provides CLI access to all Chrome DevTools Protocol features, making it easy to automate browser interactions, debug web applications, and inspect network traffic - all from the command line with grep/tail-friendly output.
 
+## New Features
+
+### `--inspect` for Console Output
+Fully expand nested objects and arrays in console messages instead of seeing `Object` or `Array(12)`:
+
+```bash
+# Without --inspect
+cdp-cli console "MyPage"
+"Config: {options: Object, values: Array(5)}"
+
+# With --inspect - see actual values
+cdp-cli console "MyPage" --inspect
+"Config: {options: {debug: true, level: 3}, values: [1, 2, 3, 4, 5]}"
+```
+
+### `--user-gesture` for Click Command
+Enable WebXR, fullscreen, and other activation-gated browser APIs that require user interaction:
+
+```bash
+# Standard click (uses Input.dispatchMouseEvent)
+cdp-cli click "button#submit" "MyPage"
+
+# User gesture click (uses Runtime.evaluate with userGesture: true)
+# Required for WebXR session requests, fullscreen API, etc.
+cdp-cli click "button#enter-vr" "MyPage" --user-gesture
+```
+
 ## Installation
 
 ```bash
@@ -143,6 +170,11 @@ cdp-cli console "example" --verbose
 cdp-cli console "example" -v
 {"text":"Error: undefined","type":"error","source":"exception","timestamp":1698234567890,"url":"app.js","line":42}
 
+# Expand nested objects/arrays (instead of "Object" or "Array(N)")
+cdp-cli console "example" --inspect
+# or
+cdp-cli console "example" -i
+
 # Filter by type (still outputs bare strings by default)
 cdp-cli console "example" --type error
 
@@ -205,6 +237,10 @@ cdp-cli network "example" --duration 5 --type fetch
 ```bash
 cdp-cli click "button#submit" "example"
 cdp-cli click "a.link" "example" --double
+
+# Use --user-gesture for WebXR, fullscreen, and other activation-gated APIs
+cdp-cli click "button#enter-vr" "example" --user-gesture
+cdp-cli click "button#fullscreen" "example" -g  # short flag
 ```
 
 **fill** - Fill an input element

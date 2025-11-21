@@ -47,7 +47,7 @@ async function getBoxModel(
 export async function click(
   context: CDPContext,
   selector: string,
-  options: { page: string; double?: boolean }
+  options: { page: string; double?: boolean; userGesture?: boolean }
 ): Promise<void> {
   let ws;
   try {
@@ -56,47 +56,73 @@ export async function click(
 
     ws = await context.connect(page);
 
-    // Find element
-    const { nodeId } = await findElement(context, ws, selector);
+    if (options.userGesture) {
+      // Use Runtime.evaluate with userGesture for activation-gated APIs (WebXR, fullscreen, etc.)
+      await context.sendCommand(ws, 'Runtime.enable');
 
-    // Get element position
-    const boxModel = await getBoxModel(context, ws, nodeId);
-    const quad = boxModel.model.content;
+      // Escape the selector for use in JavaScript string
+      const escapedSelector = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-    // Calculate center point
-    const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
-    const y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
+      const clickCount = options.double ? 2 : 1;
+      const result = await context.sendCommand(ws, 'Runtime.evaluate', {
+        expression: `
+          (function() {
+            const el = document.querySelector('${escapedSelector}');
+            if (!el) {
+              return { error: 'Element not found: ${escapedSelector}' };
+            }
+            // Perform click(s)
+            for (let i = 0; i < ${clickCount}; i++) {
+              el.click();
+            }
+            return {
+              success: true,
+              tagName: el.tagName,
+              id: el.id || null,
+              className: el.className || null
+            };
+          })();
+        `,
+        userGesture: true,
+        returnByValue: true
+      });
 
-    // Enable Input domain
-    await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
-      type: 'mouseMoved',
-      x,
-      y
-    });
+      if (result.result?.value?.error) {
+        throw new Error(result.result.value.error);
+      }
 
-    await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1
-    });
+      outputSuccess('Click performed with user gesture', {
+        selector,
+        userGesture: true,
+        double: options.double || false,
+        element: result.result?.value
+      });
+    } else {
+      // Standard click using Input.dispatchMouseEvent
+      // Find element
+      const { nodeId } = await findElement(context, ws, selector);
 
-    await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1
-    });
+      // Get element position
+      const boxModel = await getBoxModel(context, ws, nodeId);
+      const quad = boxModel.model.content;
 
-    if (options.double) {
+      // Calculate center point
+      const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
+      const y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
+
+      // Dispatch mouse events
+      await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x,
+        y
+      });
+
       await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
         type: 'mousePressed',
         x,
         y,
         button: 'left',
-        clickCount: 2
+        clickCount: 1
       });
 
       await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
@@ -104,16 +130,34 @@ export async function click(
         x,
         y,
         button: 'left',
-        clickCount: 2
+        clickCount: 1
+      });
+
+      if (options.double) {
+        await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
+          type: 'mousePressed',
+          x,
+          y,
+          button: 'left',
+          clickCount: 2
+        });
+
+        await context.sendCommand(ws, 'Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          x,
+          y,
+          button: 'left',
+          clickCount: 2
+        });
+      }
+
+      outputSuccess('Click performed', {
+        selector,
+        x,
+        y,
+        double: options.double || false
       });
     }
-
-    outputSuccess('Click performed', {
-      selector,
-      x,
-      y,
-      double: options.double || false
-    });
   } catch (error) {
     outputError(
       (error as Error).message,

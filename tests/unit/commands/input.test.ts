@@ -89,6 +89,39 @@ describe('Input Commands', () => {
       capture.restore();
       exitMock.restore();
     });
+
+    it('should click element with user gesture activation', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      await input.click(context, 'button#submit', { page: 'page1', userGesture: true });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+      const result = JSON.parse(logs[0]);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toBe('Click performed with user gesture');
+      expect(result.data.selector).toBe('button#submit');
+      expect(result.data.userGesture).toBe(true);
+    });
+
+    it('should click element with user gesture and double click', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      await input.click(context, 'button', { page: 'page1', userGesture: true, double: true });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      const result = JSON.parse(logs[0]);
+      expect(result.success).toBe(true);
+      expect(result.data.userGesture).toBe(true);
+      expect(result.data.double).toBe(true);
+    });
   });
 
   describe('fill', () => {
