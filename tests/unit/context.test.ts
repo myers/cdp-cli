@@ -108,8 +108,8 @@ describe('CDPContext', () => {
       installMockFetch({
         pages: [
           ...samplePages,
-          { id: 'page4', title: 'Page 4', url: 'http://example.com/4', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page4' },
-          { id: 'page5', title: 'Page 5', url: 'http://example.com/5', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page5' }
+          { id: 'page5', title: 'Page 5', url: 'http://example.com/5', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page5' },
+          { id: 'page6', title: 'Page 6', url: 'http://example.com/6', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page6' }
         ]
       });
 
@@ -122,7 +122,7 @@ describe('CDPContext', () => {
         const message = (error as Error).message;
 
         // Should show "and 2 more"
-        expect(message).toContain('and 2 more');
+        expect(message).toContain('and 3 more');
       }
     });
   });
