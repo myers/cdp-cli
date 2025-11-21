@@ -143,6 +143,31 @@ export class MockWebSocket extends EventEmitter {
           };
           break;
 
+        case 'Runtime.getProperties':
+          // Return mock properties based on objectId
+          if (message.params?.objectId === 'obj-123') {
+            result = {
+              result: [
+                { name: 'x', value: { type: 'number', value: 1 }, enumerable: true },
+                { name: 'y', value: { type: 'number', value: 2 }, enumerable: true },
+                { name: 'z', value: { type: 'number', value: 3 }, enumerable: true }
+              ]
+            };
+          } else if (message.params?.objectId === 'arr-456') {
+            result = {
+              result: [
+                { name: '0', value: { type: 'number', value: 1 }, enumerable: true },
+                { name: '1', value: { type: 'number', value: 0 }, enumerable: true },
+                { name: '2', value: { type: 'number', value: 0 }, enumerable: true },
+                { name: '3', value: { type: 'number', value: 0 }, enumerable: true },
+                { name: 'length', value: { type: 'number', value: 4 }, enumerable: false }
+              ]
+            };
+          } else {
+            result = { result: [] };
+          }
+          break;
+
         case 'Input.dispatchMouseEvent':
         case 'Input.dispatchKeyEvent':
           result = {};

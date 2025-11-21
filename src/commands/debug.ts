@@ -10,6 +10,71 @@ import { WebSocket } from 'ws';
 /**
  * List console messages
  */
+/**
+ * Recursively expand an object/array via CDP Runtime.getProperties
+ */
+async function expandValue(
+  context: CDPContext,
+  ws: WebSocket,
+  arg: any,
+  depth: number = 0,
+  maxDepth: number = 3
+): Promise<any> {
+  // Primitive values - return directly
+  if (arg.value !== undefined) return arg.value;
+
+  // Don't recurse too deep
+  if (depth >= maxDepth) {
+    return arg.description || 'Object';
+  }
+
+  // Objects/arrays with objectId - fetch and expand properties
+  if (arg.objectId) {
+    try {
+      const props = await context.sendCommand(ws, 'Runtime.getProperties', {
+        objectId: arg.objectId,
+        ownProperties: true
+      });
+
+      if (props.result && props.result.length > 0) {
+        const isArray = arg.subtype === 'array' || arg.className === 'Array';
+        const enumerable = props.result.filter((p: any) => p.enumerable !== false);
+
+        if (isArray) {
+          // For arrays, extract numeric indices and return as array
+          const arrayEntries = enumerable
+            .filter((p: any) => /^\d+$/.test(p.name))
+            .sort((a: any, b: any) => parseInt(a.name) - parseInt(b.name));
+
+          const values = await Promise.all(
+            arrayEntries.map(async (p: any) => {
+              if (p.value) {
+                return await expandValue(context, ws, p.value, depth + 1, maxDepth);
+              }
+              return null;
+            })
+          );
+          return values;
+        } else {
+          // For objects, return as object
+          const obj: any = {};
+          for (const p of enumerable) {
+            if (p.value) {
+              obj[p.name] = await expandValue(context, ws, p.value, depth + 1, maxDepth);
+            }
+          }
+          return obj;
+        }
+      }
+    } catch (error) {
+      return arg.description || 'Object';
+    }
+  }
+
+  // Fallback
+  return arg.description || null;
+}
+
 export async function listConsole(
   context: CDPContext,
   options: {
@@ -20,6 +85,7 @@ export async function listConsole(
     withType: boolean;
     withTimestamp: boolean;
     withSource: boolean;
+    inspect?: boolean;
   }
 ): Promise<void> {
   let ws: WebSocket | undefined;
@@ -42,47 +108,58 @@ export async function listConsole(
     if (ws) {
       for (const msg of messages) {
         if (msg.args && msg.args.length > 0) {
-          const formattedArgs = await Promise.all(
-            msg.args.map(async (arg: any) => {
-              // Primitive values
-              if (arg.value !== undefined) return String(arg.value);
+          if (options.inspect) {
+            // Full expansion mode - recursively expand all objects/arrays
+            const expandedArgs = await Promise.all(
+              msg.args.map(async (arg: any) => {
+                return await expandValue(context, ws!, arg, 0, 3);
+              })
+            );
+            msg.text = expandedArgs.map(a => JSON.stringify(a)).join(' ');
+          } else {
+            // Default mode - shallow expansion with descriptions
+            const formattedArgs = await Promise.all(
+              msg.args.map(async (arg: any) => {
+                // Primitive values
+                if (arg.value !== undefined) return String(arg.value);
 
-              // Objects with objectId - fetch properties
-              if (arg.objectId && ws) {
-                try {
-                  const props = await context.sendCommand(ws, 'Runtime.getProperties', {
-                    objectId: arg.objectId,
-                    ownProperties: true
-                  });
+                // Objects with objectId - fetch properties
+                if (arg.objectId && ws) {
+                  try {
+                    const props = await context.sendCommand(ws, 'Runtime.getProperties', {
+                      objectId: arg.objectId,
+                      ownProperties: true
+                    });
 
-                  // Format as {key: value, ...}
-                  if (props.result && props.result.length > 0) {
-                    const entries = props.result
-                      .filter((p: any) => p.enumerable !== false)
-                      .slice(0, 10) // Limit to first 10 properties
-                      .map((p: any) => {
-                        const value = p.value?.value !== undefined
-                          ? JSON.stringify(p.value.value)
-                          : (p.value?.description || '...');
-                        return `${p.name}: ${value}`;
-                      })
-                      .join(', ');
-                    const overflow = props.result.length > 10 ? ', ...' : '';
-                    return `{${entries}${overflow}}`;
+                    // Format as {key: value, ...}
+                    if (props.result && props.result.length > 0) {
+                      const entries = props.result
+                        .filter((p: any) => p.enumerable !== false)
+                        .slice(0, 10) // Limit to first 10 properties
+                        .map((p: any) => {
+                          const value = p.value?.value !== undefined
+                            ? JSON.stringify(p.value.value)
+                            : (p.value?.description || '...');
+                          return `${p.name}: ${value}`;
+                        })
+                        .join(', ');
+                      const overflow = props.result.length > 10 ? ', ...' : '';
+                      return `{${entries}${overflow}}`;
+                    }
+                  } catch (error) {
+                    // Fall back to description if property fetch fails
+                    return arg.description || 'Object';
                   }
-                } catch (error) {
-                  // Fall back to description if property fetch fails
-                  return arg.description || 'Object';
                 }
-              }
 
-              // Fallback to description
-              return arg.description || JSON.stringify(arg);
-            })
-        );
+                // Fallback to description
+                return arg.description || JSON.stringify(arg);
+              })
+            );
 
-        // Update message text with formatted args
-        msg.text = formattedArgs.join(' ');
+            // Update message text with formatted args
+            msg.text = formattedArgs.join(' ');
+          }
         }
       }
     }

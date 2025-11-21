@@ -53,6 +53,39 @@ export const consoleMessages = {
         url: 'https://example.com/app.js'
       }
     }
+  },
+  withObject: {
+    method: 'Runtime.consoleAPICalled',
+    params: {
+      type: 'log',
+      args: [
+        { type: 'string', value: 'data:' },
+        {
+          type: 'object',
+          className: 'Object',
+          description: 'Object',
+          objectId: 'obj-123'
+        }
+      ],
+      timestamp: 1698234570000
+    }
+  },
+  withArray: {
+    method: 'Runtime.consoleAPICalled',
+    params: {
+      type: 'log',
+      args: [
+        { type: 'string', value: 'matrix:' },
+        {
+          type: 'object',
+          subtype: 'array',
+          className: 'Array',
+          description: 'Array(4)',
+          objectId: 'arr-456'
+        }
+      ],
+      timestamp: 1698234571000
+    }
   }
 };
 

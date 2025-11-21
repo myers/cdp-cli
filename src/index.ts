@@ -218,6 +218,12 @@ cli.command(
         description: 'Include all fields (type, timestamp, source location)',
         alias: 'v',
         default: false
+      })
+      .option('inspect', {
+        type: 'boolean',
+        description: 'Fully expand all objects and arrays in output',
+        alias: 'i',
+        default: false
       });
   },
   async (argv) => {
@@ -230,7 +236,8 @@ cli.command(
       tail: argv.all ? -1 : (argv.tail as number),
       withType: verbose || (argv['with-type'] as boolean),
       withTimestamp: verbose || (argv['with-timestamp'] as boolean),
-      withSource: verbose || (argv['with-source'] as boolean)
+      withSource: verbose || (argv['with-source'] as boolean),
+      inspect: argv.inspect as boolean
     });
   }
 );

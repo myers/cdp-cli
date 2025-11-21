@@ -537,6 +537,112 @@ describe('Debug Commands', () => {
       // Should have NO warning (not truncated)
       expect(errors).toHaveLength(0);
     });
+
+    it('should fully expand objects when --inspect is used', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          ws.simulateMessage(consoleMessages.withObject);
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: false,
+        inspect: true
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+      const output = JSON.parse(logs[0]);
+      // With inspect, should show full object as JSON
+      expect(output).toContain('"x":1');
+      expect(output).toContain('"y":2');
+      expect(output).toContain('"z":3');
+    });
+
+    it('should fully expand arrays when --inspect is used', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          ws.simulateMessage(consoleMessages.withArray);
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: false,
+        inspect: true
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+      const output = JSON.parse(logs[0]);
+      // With inspect, arrays should show as [1,0,0,0]
+      expect(output).toContain('[1,0,0,0]');
+    });
+
+    it('should show Object placeholder without --inspect', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+
+        setTimeout(() => {
+          ws.simulateMessage(consoleMessages.withObject);
+        }, 10);
+
+        return ws;
+      };
+
+      await debug.listConsole(context, {
+        page: 'page1',
+        duration: 0.1,
+        tail: 10,
+        withType: false,
+        withTimestamp: false,
+        withSource: false,
+        inspect: false
+      });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(logs).toHaveLength(1);
+      const output = JSON.parse(logs[0]);
+      // Without inspect, should show shallow expansion with property names
+      expect(output).toContain('x:');
+      expect(output).toContain('y:');
+      expect(output).toContain('z:');
+    });
   });
 
   describe('snapshot', () => {
