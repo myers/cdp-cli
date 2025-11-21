@@ -309,6 +309,84 @@ export class CDPContext {
   }
 
   /**
+   * Get browser WebSocket URL for Target domain commands
+   */
+  async getBrowserWebSocketUrl(): Promise<string> {
+    const response = await cdpFetch(`${this.cdpUrl}/json/version`);
+    if (!response.ok) {
+      throw new Error(`Failed to get browser info: ${response.statusText}`);
+    }
+    const version = await response.json() as { webSocketDebuggerUrl?: string };
+    if (!version.webSocketDebuggerUrl) {
+      throw new Error('Browser WebSocket URL not available');
+    }
+    return version.webSocketDebuggerUrl;
+  }
+
+  /**
+   * Create a new page using Target.createTarget (fallback method)
+   */
+  async createPageViaTarget(url?: string): Promise<Page> {
+    const browserWsUrl = await this.getBrowserWebSocketUrl();
+
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(browserWsUrl);
+      let messageId = 1;
+
+      ws.on('open', () => {
+        // Send Target.createTarget command
+        ws.send(JSON.stringify({
+          id: messageId,
+          method: 'Target.createTarget',
+          params: { url: url || 'about:blank' }
+        }));
+      });
+
+      ws.on('message', async (data) => {
+        const message = JSON.parse(data.toString());
+
+        if (message.id === messageId) {
+          ws.close();
+
+          if (message.error) {
+            reject(new Error(`Target.createTarget failed: ${message.error.message}`));
+            return;
+          }
+
+          const targetId = message.result?.targetId;
+          if (!targetId) {
+            reject(new Error('Target.createTarget did not return targetId'));
+            return;
+          }
+
+          // Fetch page list to get full page info
+          try {
+            const pages = await this.getPages();
+            const page = pages.find(p => p.id === targetId);
+            if (page) {
+              resolve(page);
+            } else {
+              reject(new Error(`Created page ${targetId} not found in page list`));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        }
+      });
+
+      ws.on('error', (error) => {
+        reject(new Error(`WebSocket error: ${error.message}`));
+      });
+
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        ws.close();
+        reject(new Error('Target.createTarget timed out'));
+      }, 10000);
+    });
+  }
+
+  /**
    * Create a new page
    */
   async createPage(url?: string): Promise<Page> {
@@ -317,11 +395,18 @@ export class CDPContext {
       : `${this.cdpUrl}/json/new`;
 
     const response = await cdpFetch(endpoint);
-    if (!response.ok) {
-      throw new Error(`Failed to create page: ${response.statusText}`);
+
+    // If HTTP endpoint works, use it
+    if (response.ok) {
+      return await response.json() as Page;
     }
 
-    return await response.json() as Page;
+    // If Method Not Allowed, try Target.createTarget fallback
+    if (response.status === 405) {
+      return await this.createPageViaTarget(url);
+    }
+
+    throw new Error(`Failed to create page: ${response.statusText}`);
   }
 
 }
