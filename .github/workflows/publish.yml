@@ -17,7 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: 'lts/*'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install npm v11.6.2 (required for OIDC trusted publishing, min v11.5.1)
