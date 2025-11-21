@@ -28,6 +28,30 @@ async function findElement(
 }
 
 /**
+ * Helper function to resolve backendNodeId to nodeId
+ */
+async function resolveBackendNode(
+  context: CDPContext,
+  ws: any,
+  backendNodeId: number
+): Promise<{ nodeId: number }> {
+  await context.sendCommand(ws, 'DOM.enable');
+  // Must request document first before pushNodesByBackendIdsToFrontend works
+  await context.sendCommand(ws, 'DOM.getDocument');
+
+  // Push the node to get a valid nodeId for this session
+  const pushed = await context.sendCommand(ws, 'DOM.pushNodesByBackendIdsToFrontend', {
+    backendNodeIds: [backendNodeId]
+  });
+
+  if (!pushed.nodeIds || pushed.nodeIds.length === 0 || pushed.nodeIds[0] === 0) {
+    throw new Error(`Failed to resolve backendNodeId ${backendNodeId}`);
+  }
+
+  return { nodeId: pushed.nodeIds[0] };
+}
+
+/**
  * Get box model for an element
  */
 async function getBoxModel(
@@ -42,12 +66,12 @@ async function getBoxModel(
 }
 
 /**
- * Click an element by selector
+ * Click an element by selector or backendNodeId
  */
 export async function click(
   context: CDPContext,
-  selector: string,
-  options: { page: string; double?: boolean; userGesture?: boolean }
+  selector: string | undefined,
+  options: { page: string; node?: number; double?: boolean; userGesture?: boolean }
 ): Promise<void> {
   let ws;
   try {
@@ -60,47 +84,91 @@ export async function click(
       // Use Runtime.evaluate with userGesture for activation-gated APIs (WebXR, fullscreen, etc.)
       await context.sendCommand(ws, 'Runtime.enable');
 
-      // Escape the selector for use in JavaScript string
-      const escapedSelector = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      if (options.node) {
+        // Click by backendNodeId using Runtime
+        await context.sendCommand(ws, 'DOM.enable');
+        await context.sendCommand(ws, 'DOM.getDocument');
+        const resolved = await context.sendCommand(ws, 'DOM.resolveNode', {
+          backendNodeId: options.node
+        });
 
-      const clickCount = options.double ? 2 : 1;
-      const result = await context.sendCommand(ws, 'Runtime.evaluate', {
-        expression: `
-          (function() {
-            const el = document.querySelector('${escapedSelector}');
-            if (!el) {
-              return { error: 'Element not found: ${escapedSelector}' };
-            }
-            // Perform click(s)
+        if (!resolved.object?.objectId) {
+          throw new Error(`Failed to resolve backendNodeId ${options.node}`);
+        }
+
+        const clickCount = options.double ? 2 : 1;
+        const result = await context.sendCommand(ws, 'Runtime.callFunctionOn', {
+          objectId: resolved.object.objectId,
+          functionDeclaration: `function() {
             for (let i = 0; i < ${clickCount}; i++) {
-              el.click();
+              this.click();
             }
             return {
               success: true,
-              tagName: el.tagName,
-              id: el.id || null,
-              className: el.className || null
+              tagName: this.tagName,
+              id: this.id || null,
+              className: this.className || null
             };
-          })();
-        `,
-        userGesture: true,
-        returnByValue: true
-      });
+          }`,
+          userGesture: true,
+          returnByValue: true
+        });
 
-      if (result.result?.value?.error) {
-        throw new Error(result.result.value.error);
+        if (result.result?.value?.error) {
+          throw new Error(result.result.value.error);
+        }
+
+        outputSuccess('Click performed with user gesture', {
+          node: options.node,
+          userGesture: true,
+          double: options.double || false,
+          element: result.result?.value
+        });
+      } else {
+        // Click by selector
+        const escapedSelector = selector!.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+        const clickCount = options.double ? 2 : 1;
+        const result = await context.sendCommand(ws, 'Runtime.evaluate', {
+          expression: `
+            (function() {
+              const el = document.querySelector('${escapedSelector}');
+              if (!el) {
+                return { error: 'Element not found: ${escapedSelector}' };
+              }
+              // Perform click(s)
+              for (let i = 0; i < ${clickCount}; i++) {
+                el.click();
+              }
+              return {
+                success: true,
+                tagName: el.tagName,
+                id: el.id || null,
+                className: el.className || null
+              };
+            })();
+          `,
+          userGesture: true,
+          returnByValue: true
+        });
+
+        if (result.result?.value?.error) {
+          throw new Error(result.result.value.error);
+        }
+
+        outputSuccess('Click performed with user gesture', {
+          selector,
+          userGesture: true,
+          double: options.double || false,
+          element: result.result?.value
+        });
       }
-
-      outputSuccess('Click performed with user gesture', {
-        selector,
-        userGesture: true,
-        double: options.double || false,
-        element: result.result?.value
-      });
     } else {
       // Standard click using Input.dispatchMouseEvent
-      // Find element
-      const { nodeId } = await findElement(context, ws, selector);
+      // Find element by selector or backendNodeId
+      const { nodeId } = options.node
+        ? await resolveBackendNode(context, ws, options.node)
+        : await findElement(context, ws, selector!);
 
       // Get element position
       const boxModel = await getBoxModel(context, ws, nodeId);
@@ -152,7 +220,8 @@ export async function click(
       }
 
       outputSuccess('Click performed', {
-        selector,
+        selector: selector || undefined,
+        node: options.node || undefined,
         x,
         y,
         double: options.double || false
@@ -162,7 +231,7 @@ export async function click(
     outputError(
       (error as Error).message,
       'CLICK_FAILED',
-      { selector, page: options.page }
+      { selector, node: options.node, page: options.page }
     );
     process.exit(1);
   } finally {
@@ -173,13 +242,13 @@ export async function click(
 }
 
 /**
- * Fill an input element
+ * Fill an input element by selector or backendNodeId
  */
 export async function fill(
   context: CDPContext,
-  selector: string,
+  selector: string | undefined,
   value: string,
-  options: { page: string }
+  options: { page: string; node?: number }
 ): Promise<void> {
   let ws;
   try {
@@ -188,8 +257,10 @@ export async function fill(
 
     ws = await context.connect(page);
 
-    // Find element and focus it
-    const { nodeId } = await findElement(context, ws, selector);
+    // Find element by selector or backendNodeId and focus it
+    const { nodeId } = options.node
+      ? await resolveBackendNode(context, ws, options.node)
+      : await findElement(context, ws, selector!);
     await context.sendCommand(ws, 'DOM.focus', { nodeId });
 
     // Clear existing value using DOM API (safe from code injection)
@@ -213,14 +284,15 @@ export async function fill(
     }
 
     outputSuccess('Fill performed', {
-      selector,
+      selector: selector || undefined,
+      node: options.node || undefined,
       value
     });
   } catch (error) {
     outputError(
       (error as Error).message,
       'FILL_FAILED',
-      { selector, value, page: options.page }
+      { selector, node: options.node, value, page: options.page }
     );
     process.exit(1);
   } finally {

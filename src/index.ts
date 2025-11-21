@@ -50,15 +50,15 @@ const cli = yargs(hideBin(process.argv))
       // Map commands to their missing arguments and helpful suggestions
       const commandHelp: Record<string, { args: string[]; suggestion: string }> = {
         'console': { args: ['page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
-        'go': { args: ['action', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'go': { args: ['page', 'action'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
         'close': { args: ['idOrTitle'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
         'snapshot': { args: ['page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
-        'eval': { args: ['expression', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'eval': { args: ['page', 'expression'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
         'screenshot': { args: ['page', 'output'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
         'network': { args: ['page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
-        'click': { args: ['selector', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
-        'fill': { args: ['selector', 'value', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
-        'key': { args: ['key', 'page'], suggestion: "Use 'cdp-cli tabs' to see available pages." }
+        'click': { args: ['page', 'selector'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'fill': { args: ['page', 'value', 'selector'], suggestion: "Use 'cdp-cli tabs' to see available pages." },
+        'key': { args: ['page', 'key'], suggestion: "Use 'cdp-cli tabs' to see available pages." }
       };
 
       if (command && commandHelp[command]) {
@@ -82,7 +82,8 @@ const cli = yargs(hideBin(process.argv))
     process.exit(1);
   })
   .help()
-  .alias('help', 'h');
+  .alias('help', 'h')
+  .epilog('<page> can be a page ID or a substring of the page title. Use "cdp-cli tabs" to list pages.');
 
 // Page management commands
 cli.command(
@@ -111,16 +112,16 @@ cli.command(
 );
 
 cli.command(
-  'go <action> <page>',
+  'go <page> <action>',
   'Navigate page (URL, back, forward, reload)',
   (yargs) => {
     return yargs
-      .positional('action', {
-        describe: 'URL or action (back, forward, reload)',
-        type: 'string'
-      })
       .positional('page', {
         describe: 'Page ID or title',
+        type: 'string'
+      })
+      .positional('action', {
+        describe: 'URL or action (back, forward, reload)',
         type: 'string'
       });
   },
@@ -253,9 +254,9 @@ cli.command(
       })
       .option('format', {
         type: 'string',
-        description: 'Snapshot format (text, dom, ax)',
+        description: 'Snapshot format (ax, text, dom)',
         alias: 'f',
-        default: 'text'
+        default: 'ax'
       });
   },
   async (argv) => {
@@ -268,16 +269,16 @@ cli.command(
 );
 
 cli.command(
-  'eval <expression> <page>',
+  'eval <page> <expression>',
   'Evaluate JavaScript expression',
   (yargs) => {
     return yargs
-      .positional('expression', {
-        describe: 'JavaScript expression to evaluate',
-        type: 'string'
-      })
       .positional('page', {
         describe: 'Page ID or title',
+        type: 'string'
+      })
+      .positional('expression', {
+        describe: 'JavaScript expression to evaluate',
         type: 'string'
       });
   },
@@ -360,17 +361,22 @@ cli.command(
 
 // Input commands
 cli.command(
-  'click <selector> <page>',
+  'click <page> [selector]',
   'Click an element',
   (yargs) => {
     return yargs
-      .positional('selector', {
-        describe: 'CSS selector',
-        type: 'string'
-      })
       .positional('page', {
         describe: 'Page ID or title',
         type: 'string'
+      })
+      .positional('selector', {
+        describe: 'CSS selector (or use --node)',
+        type: 'string'
+      })
+      .option('node', {
+        type: 'number',
+        description: 'Backend DOM node ID (from snapshot)',
+        alias: 'n'
       })
       .option('double', {
         type: 'boolean',
@@ -383,12 +389,19 @@ cli.command(
         description: 'Use user gesture activation (required for WebXR, fullscreen, etc.)',
         alias: 'g',
         default: false
+      })
+      .check((argv) => {
+        if (!argv.selector && !argv.node) {
+          throw new Error('Either <selector> or --node must be provided');
+        }
+        return true;
       });
   },
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
-    await input.click(context, argv.selector as string, {
+    await input.click(context, argv.selector as string | undefined, {
       page: argv.page as string,
+      node: argv.node as number | undefined,
       double: argv.double as boolean,
       userGesture: argv['user-gesture'] as boolean
     });
@@ -396,47 +409,59 @@ cli.command(
 );
 
 cli.command(
-  'fill <selector> <value> <page>',
+  'fill <page> <value> [selector]',
   'Fill an input element',
   (yargs) => {
     return yargs
-      .positional('selector', {
-        describe: 'CSS selector',
+      .positional('page', {
+        describe: 'Page ID or title',
         type: 'string'
       })
       .positional('value', {
         describe: 'Value to fill',
         type: 'string'
       })
-      .positional('page', {
-        describe: 'Page ID or title',
+      .positional('selector', {
+        describe: 'CSS selector (or use --node)',
         type: 'string'
+      })
+      .option('node', {
+        type: 'number',
+        description: 'Backend DOM node ID (from snapshot)',
+        alias: 'n'
+      })
+      .check((argv) => {
+        if (!argv.selector && !argv.node) {
+          throw new Error('Either <selector> or --node must be provided');
+        }
+        return true;
       });
   },
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
     await input.fill(
       context,
-      argv.selector as string,
+      argv.selector as string | undefined,
       argv.value as string,
       {
-        page: argv.page as string
+        page: argv.page as string,
+        node: argv.node as number | undefined
       }
     );
   }
 );
 
 cli.command(
-  'key <key> <page>',
+  'key <page> <key>',
   'Press a keyboard key',
   (yargs) => {
     return yargs
-      .positional('key', {
-        describe: 'Key name (enter, tab, escape, etc)',
-        type: 'string'
-      })
       .positional('page', {
         describe: 'Page ID or title',
+        type: 'string'
+      })
+      .positional('key', {
+        describe: 'Key name (enter, tab, escape, etc)',
         type: 'string'
       });
   },

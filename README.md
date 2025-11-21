@@ -26,28 +26,42 @@ Enable WebXR, fullscreen, and other activation-gated browser APIs that require u
 
 ```bash
 # Standard click (uses Input.dispatchMouseEvent)
-cdp-cli click "button#submit" "MyPage"
+cdp-cli click "MyPage" "button#submit"
 
 # User gesture click (uses Runtime.evaluate with userGesture: true)
 # Required for WebXR session requests, fullscreen API, etc.
-cdp-cli click "button#enter-vr" "MyPage" --user-gesture
+cdp-cli click "MyPage" "button#enter-vr" --user-gesture
 ```
 
 ## Installation
 
 ```bash
-# Local installation
-cd chrome-devtools-cli
-npm install
-npm run build
-
-# Global installation (coming soon)
-npm install -g chrome-devtools-cli
+npm install -g @myerscarpenter/cdp-cli
 ```
 
-## Prerequisites
+## Quick Start
 
-Chrome must be running with remote debugging enabled:
+```bash
+# Launch Chrome with remote debugging
+cdp-cli launch
+
+# List all open pages
+cdp-cli tabs
+
+# Navigate to a URL
+cdp-cli new "https://example.com"
+
+# Get page snapshot (accessibility tree)
+cdp-cli snapshot "example"
+
+# Click an element
+cdp-cli click "example" "a"
+
+# Take a screenshot
+cdp-cli screenshot "example" screenshot.jpg
+```
+
+Or start Chrome manually:
 
 ```bash
 # macOS
@@ -59,25 +73,6 @@ google-chrome --remote-debugging-port=9222
 
 # Windows
 chrome.exe --remote-debugging-port=9222
-```
-
-## Quick Start
-
-```bash
-# List all open pages
-cdp-cli tabs
-
-# Navigate to a URL
-cdp-cli new "https://example.com"
-
-# Take a screenshot
-cdp-cli screenshot "example" --output screenshot.jpg
-
-# List console messages (collects for 0.1s)
-cdp-cli console "example"
-
-# Evaluate JavaScript
-cdp-cli eval "document.title" "example"
 ```
 
 ## Output Format: NDJSON
@@ -119,10 +114,10 @@ cdp-cli new  # Empty page
 
 **go** - Navigate page (URL, back, forward, reload)
 ```bash
-cdp-cli go "https://github.com" "example"
-cdp-cli go back "example"
-cdp-cli go forward "example"
-cdp-cli go reload "example"
+cdp-cli go "example" "https://github.com"
+cdp-cli go "example" back
+cdp-cli go "example" forward
+cdp-cli go "example" reload
 ```
 
 **close** - Close a page
@@ -184,21 +179,21 @@ cdp-cli console "example" --duration 2
 
 **snapshot** - Get page content snapshot
 ```bash
-# Text content (default)
+# Accessibility tree (default) - great for LLM element identification!
 cdp-cli snapshot "example"
+
+# Text content only
+cdp-cli snapshot "example" --format text
 
 # DOM tree (JSON)
 cdp-cli snapshot "example" --format dom
-
-# Accessibility tree (JSON) - great for LLM element identification!
-cdp-cli snapshot "example" --format ax
 ```
 
 **eval** - Evaluate JavaScript expression
 ```bash
-cdp-cli eval "document.title" "example"
-cdp-cli eval "window.location.href" "example"
-cdp-cli eval "Array.from(document.querySelectorAll('h1')).map(h => h.textContent)" "example"
+cdp-cli eval "example" "document.title"
+cdp-cli eval "example" "window.location.href"
+cdp-cli eval "example" "Array.from(document.querySelectorAll('h1')).map(h => h.textContent)"
 ```
 
 **screenshot** - Take a screenshot
@@ -235,25 +230,25 @@ cdp-cli network "example" --duration 5 --type fetch
 
 **click** - Click an element by CSS selector
 ```bash
-cdp-cli click "button#submit" "example"
-cdp-cli click "a.link" "example" --double
+cdp-cli click "example" "button#submit"
+cdp-cli click "example" "a.link" --double
 
 # Use --user-gesture for WebXR, fullscreen, and other activation-gated APIs
-cdp-cli click "button#enter-vr" "example" --user-gesture
-cdp-cli click "button#fullscreen" "example" -g  # short flag
+cdp-cli click "example" "button#enter-vr" --user-gesture
+cdp-cli click "example" "button#fullscreen" -g  # short flag
 ```
 
 **fill** - Fill an input element
 ```bash
-cdp-cli fill "input#email" "user@example.com" "example"
-cdp-cli fill "input[name='password']" "secret123" "example"
+cdp-cli fill "example" "user@example.com" "input#email"
+cdp-cli fill "example" "secret123" "input[name='password']"
 ```
 
 **key** - Press a keyboard key
 ```bash
-cdp-cli key enter "example"
-cdp-cli key tab "example"
-cdp-cli key escape "example"
+cdp-cli key "example" enter
+cdp-cli key "example" tab
+cdp-cli key "example" escape
 ```
 
 ## LLM Usage Patterns
@@ -269,8 +264,8 @@ cdp-cli snapshot "example" --format ax > page-structure.json
 
 # 3. Parse structure (LLM can identify element selectors)
 # 4. Interact with elements
-cdp-cli fill "input#search" "query" "example"
-cdp-cli click "button[type='submit']" "example"
+cdp-cli fill "example" "query" "input#search"
+cdp-cli click "example" "button[type='submit']"
 
 # 5. Capture result
 cdp-cli screenshot "example" --output result.jpg
@@ -296,13 +291,13 @@ cdp-cli network "localhost" --duration 5 | grep '"status":4'
 cdp-cli new "http://localhost:8080/test.html"
 
 # 2. Fill form
-cdp-cli fill "input#username" "testuser" "test"
-cdp-cli fill "input#password" "testpass" "test"
-cdp-cli click "button#login" "test"
+cdp-cli fill "test" "testuser" "input#username"
+cdp-cli fill "test" "testpass" "input#password"
+cdp-cli click "test" "button#login"
 
 # 3. Wait and verify
 sleep 2
-cdp-cli eval "document.querySelector('.success-message')?.textContent" "test"
+cdp-cli eval "test" "document.querySelector('.success-message')?.textContent"
 
 # 4. Capture evidence
 cdp-cli screenshot "test" --output test-result.jpg
@@ -312,13 +307,13 @@ cdp-cli screenshot "test" --output test-result.jpg
 
 ```bash
 # 1. Navigate to page
-cdp-cli go "https://example.com/data" "example"
+cdp-cli go "example" "https://example.com/data"
 
 # 2. Extract data via JavaScript
-cdp-cli eval "Array.from(document.querySelectorAll('.item')).map(el => ({
+cdp-cli eval "example" "Array.from(document.querySelectorAll('.item')).map(el => ({
   title: el.querySelector('.title').textContent,
   price: el.querySelector('.price').textContent
-}))" "example"
+}))"
 ```
 
 ## Global Options
