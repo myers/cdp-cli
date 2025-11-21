@@ -9,7 +9,7 @@ jobs:
   test-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # Required for creating GitHub releases
       id-token: write  # Required for OIDC trusted publishing
     steps:
       - uses: actions/checkout@v4
@@ -34,3 +34,8 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ${{ github.ref_name }} --generate-notes
