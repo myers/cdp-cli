@@ -90,6 +90,32 @@ describe('Launch Command', () => {
     });
   });
 
+  describe('isLinux', () => {
+    it('should return true on linux platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux'
+      });
+
+      expect(launch.isLinux()).toBe(true);
+    });
+
+    it('should return false on darwin platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'darwin'
+      });
+
+      expect(launch.isLinux()).toBe(false);
+    });
+
+    it('should return false on win32 platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'win32'
+      });
+
+      expect(launch.isLinux()).toBe(false);
+    });
+  });
+
   describe('launchChrome', () => {
     it('should launch Chrome on macOS with correct arguments', async () => {
       Object.defineProperty(process, 'platform', {
@@ -222,9 +248,117 @@ describe('Launch Command', () => {
       expect(mockUnref).toHaveBeenCalled();
     });
 
-    it('should fail on unsupported platforms', async () => {
+    it('should launch Chrome on Linux with google-chrome', async () => {
       Object.defineProperty(process, 'platform', {
         value: 'linux'
+      });
+
+      // Mock existsSync to return true for the first Linux path
+      vi.mocked(fs.existsSync).mockImplementation((path: any) => {
+        return path === '/usr/bin/google-chrome';
+      });
+
+      const mockUnref = vi.fn();
+      const mockProcess = { unref: mockUnref };
+      vi.mocked(child_process.spawn).mockReturnValue(mockProcess as any);
+
+      const capture = captureConsoleOutput();
+
+      await launch.launchChrome({ port: 9223 });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(child_process.spawn).toHaveBeenCalledWith(
+        '/usr/bin/google-chrome',
+        expect.arrayContaining([
+          '--remote-debugging-port=9223',
+          '--no-first-run',
+          '--no-default-browser-check'
+        ]),
+        {
+          detached: true,
+          stdio: 'ignore'
+        }
+      );
+
+      expect(mockUnref).toHaveBeenCalled();
+
+      expect(logs).toHaveLength(1);
+      const output = JSON.parse(logs[0]);
+      expect(output).toMatchObject({
+        success: true,
+        message: 'Chrome launched',
+        data: {
+          port: 9223,
+          url: 'http://localhost:9223'
+        }
+      });
+    });
+
+    it('should try alternative Linux paths (chromium-browser)', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux'
+      });
+
+      // Mock existsSync to return true only for chromium-browser
+      vi.mocked(fs.existsSync).mockImplementation((path: any) => {
+        return path === '/usr/bin/chromium-browser';
+      });
+
+      const mockUnref = vi.fn();
+      const mockProcess = { unref: mockUnref };
+      vi.mocked(child_process.spawn).mockReturnValue(mockProcess as any);
+
+      const capture = captureConsoleOutput();
+
+      await launch.launchChrome({ port: 9223 });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(child_process.spawn).toHaveBeenCalledWith(
+        '/usr/bin/chromium-browser',
+        expect.any(Array),
+        expect.any(Object)
+      );
+
+      expect(mockUnref).toHaveBeenCalled();
+    });
+
+    it('should try snap chromium path on Linux', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux'
+      });
+
+      // Mock existsSync to return true only for snap path
+      vi.mocked(fs.existsSync).mockImplementation((path: any) => {
+        return path === '/snap/bin/chromium';
+      });
+
+      const mockUnref = vi.fn();
+      const mockProcess = { unref: mockUnref };
+      vi.mocked(child_process.spawn).mockReturnValue(mockProcess as any);
+
+      const capture = captureConsoleOutput();
+
+      await launch.launchChrome({ port: 9223 });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(child_process.spawn).toHaveBeenCalledWith(
+        '/snap/bin/chromium',
+        expect.any(Array),
+        expect.any(Object)
+      );
+
+      expect(mockUnref).toHaveBeenCalled();
+    });
+
+    it('should fail on unsupported platforms', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'freebsd' // Use an unsupported platform
       });
 
       const capture = captureConsoleOutput();
@@ -308,6 +442,38 @@ describe('Launch Command', () => {
       });
       expect(output.details.expectedPaths).toBeDefined();
       expect(output.details.expectedPaths.length).toBe(2);
+    });
+
+    it('should fail when Chrome not found on Linux', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux'
+      });
+
+      // Mock existsSync to return false for all Linux paths
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const capture = captureConsoleOutput();
+      const exitMock = mockProcessExit();
+
+      try {
+        await launch.launchChrome({ port: 9223 });
+      } catch (e) {
+        // Expected process.exit
+      }
+
+      const logs = capture.getLogs();
+      capture.restore();
+      exitMock.restore();
+
+      expect(exitMock.exitCode).toBe(1);
+      expect(logs).toHaveLength(1);
+      const output = JSON.parse(logs[0]);
+      expect(output).toMatchObject({
+        error: true,
+        code: 'CHROME_NOT_FOUND'
+      });
+      expect(output.details.expectedPaths).toBeDefined();
+      expect(output.details.expectedPaths.length).toBe(5);
     });
 
     it('should launch Chrome with custom port', async () => {

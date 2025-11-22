@@ -9,6 +9,13 @@ const CHROME_PATHS_WINDOWS = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
 ];
+const CHROME_PATHS_LINUX = [
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
+  '/snap/bin/chromium'
+];
 
 /**
  * Check if running on macOS
@@ -25,6 +32,13 @@ export function isWindows(): boolean {
 }
 
 /**
+ * Check if running on Linux
+ */
+export function isLinux(): boolean {
+  return process.platform === 'linux';
+}
+
+/**
  * Get Chrome executable path for the current platform
  */
 function getChromePath(): string | null {
@@ -33,6 +47,14 @@ function getChromePath(): string | null {
   } else if (isWindows()) {
     // Try each Windows path in order
     for (const path of CHROME_PATHS_WINDOWS) {
+      if (existsSync(path)) {
+        return path;
+      }
+    }
+    return null;
+  } else if (isLinux()) {
+    // Try each Linux path in order
+    for (const path of CHROME_PATHS_LINUX) {
       if (existsSync(path)) {
         return path;
       }
@@ -47,9 +69,9 @@ function getChromePath(): string | null {
  */
 export async function launchChrome(options: { port: number }): Promise<void> {
   // Check if platform is supported
-  if (!isMacOS() && !isWindows()) {
+  if (!isMacOS() && !isWindows() && !isLinux()) {
     outputError(
-      'launch command is only supported on macOS and Windows',
+      'launch command is only supported on macOS, Windows, and Linux',
       'UNSUPPORTED_PLATFORM',
       { platform: process.platform }
     );
@@ -61,7 +83,9 @@ export async function launchChrome(options: { port: number }): Promise<void> {
   if (!chromePath) {
     const expectedPaths = isMacOS()
       ? [CHROME_PATH_MACOS]
-      : CHROME_PATHS_WINDOWS;
+      : isWindows()
+      ? CHROME_PATHS_WINDOWS
+      : CHROME_PATHS_LINUX;
 
     outputError(
       'Google Chrome not found at expected location',

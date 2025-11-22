@@ -154,7 +154,7 @@ cli.command(
 // Launch command
 cli.command(
   'launch',
-  'Launch Chrome with remote debugging (macOS only)',
+  'Launch Chrome with remote debugging (macOS,windows, or linux)',
   (yargs) => {
     return yargs.option('port', {
       type: 'number',
