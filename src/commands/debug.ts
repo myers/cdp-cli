@@ -9,6 +9,43 @@ import { WebSocket } from 'ws';
 import { extname } from 'node:path';
 
 /**
+ * Format a console message for output based on display options
+ */
+function formatConsoleMessage(
+  message: ConsoleMessage,
+  options: {
+    withType: boolean;
+    withTimestamp: boolean;
+    withSource: boolean;
+  }
+): any {
+  const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
+
+  if (needsObjectFormat) {
+    const obj: any = { text: message.text };
+
+    if (options.withType) {
+      obj.type = message.type;
+      obj.source = message.source;
+    }
+
+    if (options.withTimestamp) {
+      obj.timestamp = message.timestamp;
+    }
+
+    if (options.withSource) {
+      if (message.line !== undefined) obj.line = message.line;
+      if (message.url) obj.url = message.url;
+    }
+
+    return obj;
+  } else {
+    // Minimal format: just the text
+    return message.text;
+  }
+}
+
+/**
  * List console messages
  */
 /**
@@ -103,6 +140,9 @@ export async function listConsole(
     // Connect and enable Runtime domain
     ws = await context.connect(page);
 
+    // Determine output format
+    const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
+
     // Streaming mode: output messages immediately as they arrive
     if (duration === 0) {
       context.setupConsoleCollection(ws, (message: ConsoleMessage) => {
@@ -110,14 +150,12 @@ export async function listConsole(
           return;
         }
 
-        outputLine({
-          type: message.type,
-          timestamp: message.timestamp,
-          text: message.text,
-          source: message.source,
-          ...(message.line !== undefined && { line: message.line }),
-          ...(message.url && { url: message.url })
-        });
+        const formatted = formatConsoleMessage(message, options);
+        if (needsObjectFormat) {
+          outputLine(formatted);
+        } else {
+          outputRaw(JSON.stringify(formatted));
+        }
       });
       await context.sendCommand(ws, 'Runtime.enable');
 
@@ -242,30 +280,10 @@ export async function listConsole(
         console.error(`(${skippedCount} messages skipped. Use --tail ${suggestedTail} or --all to see more)`);
       }
 
-      // Output format depends on flags
-      const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
-
+      // Format and output messages
       if (needsObjectFormat) {
         // Object format with requested fields
-        const output = messages.map(msg => {
-          const obj: any = { text: msg.text };
-
-          if (options.withType) {
-            obj.type = msg.type;
-            obj.source = msg.source;
-          }
-
-          if (options.withTimestamp) {
-            obj.timestamp = msg.timestamp;
-          }
-
-          if (options.withSource) {
-            if (msg.line) obj.line = msg.line;
-            if (msg.url) obj.url = msg.url;
-          }
-
-          return obj;
-        });
+        const output = messages.map(msg => formatConsoleMessage(msg, options));
         outputLines(output);
       } else {
         // Minimal format: bare strings

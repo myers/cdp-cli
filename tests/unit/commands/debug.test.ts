@@ -702,6 +702,71 @@ describe('Debug Commands', () => {
     expect(JSON.parse(logs[2])).toBe('Stream message 3');
   });
 
+  it('should respect formatting options in streaming mode', async () => {
+    const capture = captureConsoleOutput();
+    const context = new CDPContext();
+
+    const originalConnect = context.connect.bind(context);
+    context.connect = async (page) => {
+      const ws = await originalConnect(page) as MockWebSocket;
+
+      // Simulate a few messages with different types
+      setTimeout(() => {
+        ws.simulateMessage({
+          method: 'Runtime.consoleAPICalled',
+          params: {
+            type: 'log',
+            args: [{ type: 'string', value: 'Log message' }],
+            timestamp: 1234567890
+          }
+        });
+        ws.simulateMessage({
+          method: 'Runtime.consoleAPICalled',
+          params: {
+            type: 'error',
+            args: [{ type: 'string', value: 'Error message' }],
+            timestamp: 1234567891
+          }
+        });
+      }, 10);
+
+      setTimeout(() => {
+        process.emit('SIGINT', 'SIGINT');
+      }, 100);
+
+      return ws;
+    };
+
+    // Stream with formatting options enabled
+    await debug.listConsole(context, {
+      page: 'page1',
+      duration: 0, // Streaming mode
+      tail: 10,
+      withType: true,
+      withTimestamp: true,
+      withSource: false
+    });
+
+    const logs = capture.getLogs();
+    capture.restore();
+
+    expect(logs).toHaveLength(2);
+
+    // First message should have type and timestamp
+    const msg1 = JSON.parse(logs[0]);
+    expect(msg1.text).toBe('Log message');
+    expect(msg1.type).toBe('log');
+    expect(msg1.source).toBe('console-api');
+    expect(msg1.timestamp).toBe(1234567890);
+
+    // Second message should also have type and timestamp
+    const msg2 = JSON.parse(logs[1]);
+    expect(msg2.text).toBe('Error message');
+    expect(msg2.type).toBe('error');
+    expect(msg2.source).toBe('console-api');
+    expect(msg2.timestamp).toBe(1234567891);
+  });
+
   describe('snapshot', () => {
     it('should capture text snapshot', async () => {
       const capture = captureConsoleOutput();
