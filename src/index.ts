@@ -390,6 +390,11 @@ cli.command(
         alias: 'g',
         default: false
       })
+      .option('wait', {
+        type: 'number',
+        description: 'Wait timeout in ms for selector to appear',
+        alias: 'w'
+      })
       .check((argv) => {
         if (!argv.selector && !argv.node) {
           throw new Error('Either <selector> or --node must be provided');
@@ -403,7 +408,8 @@ cli.command(
       page: argv.page as string,
       node: argv.node as number | undefined,
       double: argv.double as boolean,
-      userGesture: argv['user-gesture'] as boolean
+      userGesture: argv['user-gesture'] as boolean,
+      wait: argv.wait as number | undefined
     });
   }
 );

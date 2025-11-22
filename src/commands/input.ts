@@ -28,6 +28,36 @@ async function findElement(
 }
 
 /**
+ * Wait for element to appear and return it
+ */
+async function waitForElement(
+  context: CDPContext,
+  ws: any,
+  selector: string,
+  timeout: number,
+  pollInterval: number = 100
+): Promise<{ nodeId: number }> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeout) {
+    await context.sendCommand(ws, 'DOM.enable');
+    const doc = await context.sendCommand(ws, 'DOM.getDocument');
+    const node = await context.sendCommand(ws, 'DOM.querySelector', {
+      nodeId: doc.root.nodeId,
+      selector
+    });
+
+    if (node.nodeId) {
+      return { nodeId: node.nodeId };
+    }
+
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+
+  throw new Error(`Timeout waiting for element: ${selector} (${timeout}ms)`);
+}
+
+/**
  * Helper function to resolve backendNodeId to nodeId
  */
 async function resolveBackendNode(
@@ -71,7 +101,7 @@ async function getBoxModel(
 export async function click(
   context: CDPContext,
   selector: string | undefined,
-  options: { page: string; node?: number; double?: boolean; userGesture?: boolean }
+  options: { page: string; node?: number; double?: boolean; userGesture?: boolean; wait?: number }
 ): Promise<void> {
   let ws;
   try {
@@ -127,14 +157,27 @@ export async function click(
       } else {
         // Click by selector
         const escapedSelector = selector!.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
         const clickCount = options.double ? 2 : 1;
+        const waitTimeout = options.wait || 0;
+
         const result = await context.sendCommand(ws, 'Runtime.evaluate', {
           expression: `
-            (function() {
-              const el = document.querySelector('${escapedSelector}');
+            (async function() {
+              const timeout = ${waitTimeout};
+              const startTime = Date.now();
+              let el = document.querySelector('${escapedSelector}');
+
+              // Wait for element if timeout specified
+              while (!el && timeout > 0 && (Date.now() - startTime) < timeout) {
+                await new Promise(r => setTimeout(r, 100));
+                el = document.querySelector('${escapedSelector}');
+              }
+
               if (!el) {
-                return { error: 'Element not found: ${escapedSelector}' };
+                return { error: timeout > 0
+                  ? 'Timeout waiting for element: ${escapedSelector} (${waitTimeout}ms)'
+                  : 'Element not found: ${escapedSelector}'
+                };
               }
               // Perform click(s)
               for (let i = 0; i < ${clickCount}; i++) {
@@ -149,7 +192,8 @@ export async function click(
             })();
           `,
           userGesture: true,
-          returnByValue: true
+          returnByValue: true,
+          awaitPromise: true
         });
 
         if (result.result?.value?.error) {
@@ -166,9 +210,14 @@ export async function click(
     } else {
       // Standard click using Input.dispatchMouseEvent
       // Find element by selector or backendNodeId
-      const { nodeId } = options.node
-        ? await resolveBackendNode(context, ws, options.node)
-        : await findElement(context, ws, selector!);
+      let nodeId: number;
+      if (options.node) {
+        ({ nodeId } = await resolveBackendNode(context, ws, options.node));
+      } else if (options.wait) {
+        ({ nodeId } = await waitForElement(context, ws, selector!, options.wait));
+      } else {
+        ({ nodeId } = await findElement(context, ws, selector!));
+      }
 
       // Get element position
       const boxModel = await getBoxModel(context, ws, nodeId);
