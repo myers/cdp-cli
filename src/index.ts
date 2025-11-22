@@ -236,13 +236,13 @@ cli.command(
       })
       .option('duration', {
         type: 'number',
-        description: 'Collection duration in seconds (0 to stream until interrupted)',
+        description: 'Collection duration in seconds (0 to stream until interrupted, >0 for batch mode)',
         alias: 'd',
         default: 0
       })
       .option('tail', {
         type: 'number',
-        description: 'Limit to last N messages (default: 10, use -1 for all)',
+        description: 'Limit to last N messages (use -1 for all. Only works with batch mode).',
         alias: 'n',
         default: 10
       })

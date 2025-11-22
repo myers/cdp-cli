@@ -59,6 +59,12 @@ cdp-cli click "example" "a"
 
 # Take a screenshot
 cdp-cli screenshot "example" screenshot.jpg
+
+# List console messages (collects for 0.1s)
+cdp-cli console "example" -d 0.1
+
+# Evaluate JavaScript
+cdp-cli eval "example" "document.title"
 ```
 
 Or start Chrome manually:
@@ -89,7 +95,7 @@ $ cdp-cli tabs
 {"id":"A1B2C3","title":"GitHub","url":"https://github.com","type":"page"}
 {"id":"D4E5F6","title":"Google","url":"https://google.com","type":"page"}
 
-$ cdp-cli console "example"
+$ cdp-cli console "example" --with-type --with-timestamp --with-source
 {"type":"log","timestamp":1698234567890,"text":"Page loaded","source":"console-api"}
 {"type":"error","timestamp":1698234568123,"text":"TypeError: Cannot read...","source":"exception","line":42,"url":"https://example.com/app.js"}
 
