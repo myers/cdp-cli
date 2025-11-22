@@ -645,6 +645,63 @@ describe('Debug Commands', () => {
     });
   });
 
+  it('should stream console messages in real-time when duration is 0', async () => {
+    const capture = captureConsoleOutput();
+    const context = new CDPContext();
+
+    let messageCount = 0;
+    const originalConnect = context.connect.bind(context);
+    context.connect = async (page) => {
+      const ws = await originalConnect(page) as MockWebSocket;
+
+      // Simulate console messages being generated every 100ms
+      const interval = setInterval(() => {
+        messageCount++;
+        ws.simulateMessage({
+          method: 'Runtime.consoleAPICalled',
+          params: {
+            type: 'log',
+            args: [{ type: 'string', value: `Stream message ${messageCount}` }],
+            timestamp: Date.now()
+          }
+        });
+      }, 100);
+
+      // Stop after test completes
+      setTimeout(() => clearInterval(interval), 400);
+
+      return ws;
+    };
+
+    // Start streaming (duration = 0 means infinite/until interrupted)
+    const testPromise = debug.listConsole(context, {
+      page: 'page1',
+      duration: 0, // Streaming mode
+      tail: 10,
+      withType: false,
+      withTimestamp: false,
+      withSource: false
+    });
+
+    // Let it run for 350ms, then interrupt by emitting SIGINT
+    setTimeout(() => {
+      process.emit('SIGINT', 'SIGINT');
+    }, 350);
+
+    await testPromise;
+
+    const logs = capture.getLogs();
+    capture.restore();
+
+    // Should have captured 3 messages (at 100ms, 200ms, 300ms)
+    // Message at 400ms won't be captured because we interrupt at 350ms
+    expect(logs).toHaveLength(3);
+    // In minimal format (no flags), output is bare JSON strings
+    expect(JSON.parse(logs[0])).toBe('Stream message 1');
+    expect(JSON.parse(logs[1])).toBe('Stream message 2');
+    expect(JSON.parse(logs[2])).toBe('Stream message 3');
+  });
+
   describe('snapshot', () => {
     it('should capture text snapshot', async () => {
       const capture = captureConsoleOutput();
