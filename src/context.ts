@@ -198,14 +198,17 @@ export class CDPContext {
 
       if (message.method === 'Runtime.exceptionThrown') {
         const { exceptionDetails, timestamp } = message.params;
+        const exception = exceptionDetails.exception;
+
         const consoleMsg: ConsoleMessage = {
           id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
           type: 'error',
           timestamp: timestamp || Date.now(),
-          text: exceptionDetails.text,
+          text: exception?.description || exceptionDetails.text,
           source: 'exception',
           line: exceptionDetails.lineNumber,
-          url: exceptionDetails.url
+          url: exceptionDetails.url,
+          args: exception ? [exception] : undefined
         };
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
