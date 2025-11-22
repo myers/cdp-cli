@@ -23,6 +23,11 @@ async function expandValue(
   // Primitive values - return directly
   if (arg.value !== undefined) return arg.value;
 
+  // Error objects - use description directly (contains message + stack trace)
+  if (arg.subtype === 'error' && arg.description) {
+    return arg.description;
+  }
+
   // Don't recurse too deep
   if (depth >= maxDepth) {
     return arg.description || 'Object';
@@ -107,6 +112,12 @@ export async function listConsole(
     // Fetch object properties for better formatting
     if (ws) {
       for (const msg of messages) {
+        // For exceptions with -i, show full stack trace
+        if (options.inspect && msg.stackTrace) {
+          msg.text = msg.stackTrace;
+          continue;
+        }
+
         if (msg.args && msg.args.length > 0) {
           if (options.inspect) {
             // Full expansion mode - recursively expand all objects/arrays
@@ -122,6 +133,11 @@ export async function listConsole(
               msg.args.map(async (arg: any) => {
                 // Primitive values
                 if (arg.value !== undefined) return String(arg.value);
+
+                // Error objects - use description directly (contains message + stack trace)
+                if (arg.subtype === 'error' && arg.description) {
+                  return arg.description;
+                }
 
                 // Objects with objectId - fetch properties
                 if (arg.objectId && ws) {

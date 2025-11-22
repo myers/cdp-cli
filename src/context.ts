@@ -33,6 +33,7 @@ export interface ConsoleMessage {
   line?: number;
   url?: string;
   args?: any[];
+  stackTrace?: string;
 }
 
 export interface NetworkRequest {
@@ -199,16 +200,21 @@ export class CDPContext {
       if (message.method === 'Runtime.exceptionThrown') {
         const { exceptionDetails, timestamp } = message.params;
         const exception = exceptionDetails.exception;
+        const fullDescription = exception?.description || '';
+
+        // First line is the error message, rest is stack trace
+        const firstLine = fullDescription.split('\n')[0] || exceptionDetails.text;
+        const shortText = `${exceptionDetails.text} ${firstLine}`.trim();
 
         const consoleMsg: ConsoleMessage = {
           id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
           type: 'error',
           timestamp: timestamp || Date.now(),
-          text: exception?.description || exceptionDetails.text,
+          text: shortText,
           source: 'exception',
           line: exceptionDetails.lineNumber,
           url: exceptionDetails.url,
-          args: exception ? [exception] : undefined
+          stackTrace: fullDescription || undefined
         };
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
