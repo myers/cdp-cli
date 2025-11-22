@@ -13,7 +13,8 @@ vi.mock('fs', async () => {
   const actual = await vi.importActual('fs');
   return {
     ...actual,
-    existsSync: vi.fn()
+    existsSync: vi.fn(),
+    mkdirSync: vi.fn()
   };
 });
 
@@ -60,6 +61,32 @@ describe('Launch Command', () => {
       });
 
       expect(launch.isMacOS()).toBe(false);
+    });
+  });
+
+  describe('isWindows', () => {
+    it('should return true on win32 platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'win32'
+      });
+
+      expect(launch.isWindows()).toBe(true);
+    });
+
+    it('should return false on darwin platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'darwin'
+      });
+
+      expect(launch.isWindows()).toBe(false);
+    });
+
+    it('should return false on linux platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux'
+      });
+
+      expect(launch.isWindows()).toBe(false);
     });
   });
 
@@ -117,7 +144,85 @@ describe('Launch Command', () => {
       });
     });
 
-    it('should fail on non-macOS platforms', async () => {
+    it('should launch Chrome on Windows with correct arguments', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'win32'
+      });
+
+      // Mock existsSync to return true for the first Windows path
+      vi.mocked(fs.existsSync).mockImplementation((path: any) => {
+        return path === 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+      });
+
+      const mockUnref = vi.fn();
+      const mockProcess = { unref: mockUnref };
+      vi.mocked(child_process.spawn).mockReturnValue(mockProcess as any);
+
+      const capture = captureConsoleOutput();
+
+      await launch.launchChrome({ port: 9223 });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(child_process.spawn).toHaveBeenCalledWith(
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        expect.arrayContaining([
+          '--remote-debugging-port=9223',
+          '--no-first-run',
+          '--no-default-browser-check'
+        ]),
+        {
+          detached: true,
+          stdio: 'ignore'
+        }
+      );
+
+      expect(mockUnref).toHaveBeenCalled();
+
+      expect(logs).toHaveLength(1);
+      const output = JSON.parse(logs[0]);
+      expect(output).toMatchObject({
+        success: true,
+        message: 'Chrome launched',
+        data: {
+          port: 9223,
+          url: 'http://localhost:9223'
+        }
+      });
+    });
+
+    it('should try alternative Windows path if first not found', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'win32'
+      });
+
+      // Mock existsSync to return true only for the second Windows path
+      vi.mocked(fs.existsSync).mockImplementation((path: any) => {
+        return path === 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+      });
+
+      const mockUnref = vi.fn();
+      const mockProcess = { unref: mockUnref };
+      vi.mocked(child_process.spawn).mockReturnValue(mockProcess as any);
+
+      const capture = captureConsoleOutput();
+
+      await launch.launchChrome({ port: 9223 });
+
+      const logs = capture.getLogs();
+      capture.restore();
+
+      expect(child_process.spawn).toHaveBeenCalledWith(
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        expect.any(Array),
+        expect.any(Object)
+      );
+
+      expect(mockUnref).toHaveBeenCalled();
+    });
+
+    it('should fail on unsupported platforms', async () => {
       Object.defineProperty(process, 'platform', {
         value: 'linux'
       });
@@ -144,7 +249,7 @@ describe('Launch Command', () => {
       });
     });
 
-    it('should fail when Chrome not found', async () => {
+    it('should fail when Chrome not found on macOS', async () => {
       Object.defineProperty(process, 'platform', {
         value: 'darwin'
       });
@@ -171,6 +276,38 @@ describe('Launch Command', () => {
         error: true,
         code: 'CHROME_NOT_FOUND'
       });
+    });
+
+    it('should fail when Chrome not found on Windows', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'win32'
+      });
+
+      // Mock existsSync to return false for all Windows paths
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const capture = captureConsoleOutput();
+      const exitMock = mockProcessExit();
+
+      try {
+        await launch.launchChrome({ port: 9223 });
+      } catch (e) {
+        // Expected process.exit
+      }
+
+      const logs = capture.getLogs();
+      capture.restore();
+      exitMock.restore();
+
+      expect(exitMock.exitCode).toBe(1);
+      expect(logs).toHaveLength(1);
+      const output = JSON.parse(logs[0]);
+      expect(output).toMatchObject({
+        error: true,
+        code: 'CHROME_NOT_FOUND'
+      });
+      expect(output.details.expectedPaths).toBeDefined();
+      expect(output.details.expectedPaths.length).toBe(2);
     });
 
     it('should launch Chrome with custom port', async () => {
