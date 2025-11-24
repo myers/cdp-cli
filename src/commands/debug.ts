@@ -3,13 +3,14 @@
  */
 
 import { CDPContext, ConsoleMessage, Page } from '../context.js';
-import { outputLines, outputLine, outputError, outputSuccess, outputRaw } from '../output.js';
+import { outputLine, outputError, outputSuccess, outputRaw } from '../output.js';
 import { writeFileSync } from 'fs';
 import { WebSocket } from 'ws';
 import { extname } from 'node:path';
 
 /**
  * Format a console message for output based on display options
+ * Returns an encoded JSON string ready for output
  */
 function formatConsoleMessage(
   message: ConsoleMessage,
@@ -18,7 +19,7 @@ function formatConsoleMessage(
     withTimestamp: boolean;
     withSource: boolean;
   }
-): any {
+): string {
   const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
 
   if (needsObjectFormat) {
@@ -38,16 +39,89 @@ function formatConsoleMessage(
       if (message.url) obj.url = message.url;
     }
 
-    return obj;
+    return JSON.stringify(obj);
   } else {
-    // Minimal format: just the text
-    return message.text;
+    // Minimal format: just the text as JSON string
+    return JSON.stringify(message.text);
   }
 }
 
 /**
- * List console messages
+ * Expand message text by fetching object properties via CDP
  */
+async function expandMessageText(
+  context: CDPContext,
+  ws: WebSocket,
+  message: ConsoleMessage,
+  inspect: boolean
+): Promise<void> {
+  // For exceptions with -i, show full stack trace
+  if (inspect && message.stackTrace) {
+    message.text = message.stackTrace;
+    return;
+  }
+
+  if (message.args && message.args.length > 0) {
+    if (inspect) {
+      // Full expansion mode - recursively expand all objects/arrays
+      const expandedArgs = await Promise.all(
+        message.args.map(async (arg: any) => {
+          return await expandValue(context, ws, arg, 0, 3);
+        })
+      );
+      message.text = expandedArgs.map(a => JSON.stringify(a)).join(' ');
+    } else {
+      // Default mode - shallow expansion with descriptions
+      const formattedArgs = await Promise.all(
+        message.args.map(async (arg: any) => {
+          // Primitive values
+          if (arg.value !== undefined) return String(arg.value);
+
+          // Error objects - use description directly (contains message + stack trace)
+          if (arg.subtype === 'error' && arg.description) {
+            return arg.description;
+          }
+
+          // Objects with objectId - fetch properties
+          if (arg.objectId) {
+            try {
+              const props = await context.sendCommand(ws, 'Runtime.getProperties', {
+                objectId: arg.objectId,
+                ownProperties: true
+              });
+
+              // Format as {key: value, ...}
+              if (props.result && props.result.length > 0) {
+                const entries = props.result
+                  .filter((p: any) => p.enumerable !== false)
+                  .slice(0, 10) // Limit to first 10 properties
+                  .map((p: any) => {
+                    const value = p.value?.value !== undefined
+                      ? JSON.stringify(p.value.value)
+                      : (p.value?.description || '...');
+                    return `${p.name}: ${value}`;
+                  })
+                  .join(', ');
+                const overflow = props.result.length > 10 ? ', ...' : '';
+                return `{${entries}${overflow}}`;
+              }
+            } catch (error) {
+              // Fall back to description if property fetch fails
+              return arg.description || 'Object';
+            }
+          }
+
+          // Fallback to description
+          return arg.description || JSON.stringify(arg);
+        })
+      );
+
+      // Update message text with formatted args
+      message.text = formattedArgs.join(' ');
+    }
+  }
+}
+
 /**
  * Recursively expand an object/array via CDP Runtime.getProperties
  */
@@ -140,22 +214,16 @@ export async function listConsole(
     // Connect and enable Runtime domain
     ws = await context.connect(page);
 
-    // Determine output format
-    const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
-
     // Streaming mode: output messages immediately as they arrive
     if (duration === 0) {
-      context.setupConsoleCollection(ws, (message: ConsoleMessage) => {
+      context.setupConsoleCollection(ws, async (message: ConsoleMessage) => {
         if (options.type && message.type !== options.type) {
           return;
         }
 
+        await expandMessageText(context, ws, message, options.inspect || false);
         const formatted = formatConsoleMessage(message, options);
-        if (needsObjectFormat) {
-          outputLine(formatted);
-        } else {
-          outputRaw(JSON.stringify(formatted));
-        }
+        outputRaw(formatted);
       });
       await context.sendCommand(ws, 'Runtime.enable');
 
@@ -191,77 +259,6 @@ export async function listConsole(
       // Get collected messages
       let messages = context.getConsoleMessages();
 
-      // Fetch object properties for better formatting
-      if (ws) {
-        for (const msg of messages) {
-          // For exceptions with -i, show full stack trace
-          if (options.inspect && msg.stackTrace) {
-            msg.text = msg.stackTrace;
-            continue;
-          }
-
-          if (msg.args && msg.args.length > 0) {
-            if (options.inspect) {
-              // Full expansion mode - recursively expand all objects/arrays
-              const expandedArgs = await Promise.all(
-                msg.args.map(async (arg: any) => {
-                  return await expandValue(context, ws!, arg, 0, 3);
-                })
-              );
-              msg.text = expandedArgs.map(a => JSON.stringify(a)).join(' ');
-            } else {
-              // Default mode - shallow expansion with descriptions
-              const formattedArgs = await Promise.all(
-                msg.args.map(async (arg: any) => {
-                  // Primitive values
-                  if (arg.value !== undefined) return String(arg.value);
-
-                  // Error objects - use description directly (contains message + stack trace)
-                  if (arg.subtype === 'error' && arg.description) {
-                    return arg.description;
-                  }
-
-                  // Objects with objectId - fetch properties
-                  if (arg.objectId && ws) {
-                    try {
-                      const props = await context.sendCommand(ws, 'Runtime.getProperties', {
-                        objectId: arg.objectId,
-                        ownProperties: true
-                      });
-
-                      // Format as {key: value, ...}
-                      if (props.result && props.result.length > 0) {
-                        const entries = props.result
-                          .filter((p: any) => p.enumerable !== false)
-                          .slice(0, 10) // Limit to first 10 properties
-                          .map((p: any) => {
-                            const value = p.value?.value !== undefined
-                              ? JSON.stringify(p.value.value)
-                              : (p.value?.description || '...');
-                            return `${p.name}: ${value}`;
-                          })
-                          .join(', ');
-                        const overflow = props.result.length > 10 ? ', ...' : '';
-                        return `{${entries}${overflow}}`;
-                      }
-                    } catch (error) {
-                      // Fall back to description if property fetch fails
-                      return arg.description || 'Object';
-                    }
-                  }
-
-                  // Fallback to description
-                  return arg.description || JSON.stringify(arg);
-                })
-              );
-
-              // Update message text with formatted args
-              msg.text = formattedArgs.join(' ');
-            }
-          }
-        }
-      }
-
       // Filter by type if specified
       if (options.type) {
         messages = messages.filter(m => m.type === options.type);
@@ -281,15 +278,10 @@ export async function listConsole(
       }
 
       // Format and output messages
-      if (needsObjectFormat) {
-        // Object format with requested fields
-        const output = messages.map(msg => formatConsoleMessage(msg, options));
-        outputLines(output);
-      } else {
-        // Minimal format: bare strings
-        messages.forEach(msg => {
-          outputRaw(JSON.stringify(msg.text));
-        });
+      for (const msg of messages) {
+        await expandMessageText(context, ws, msg, options.inspect || false);
+        const formatted = formatConsoleMessage(msg, options);
+        outputRaw(formatted);
       }
     }
   } catch (error) {

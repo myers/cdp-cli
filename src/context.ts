@@ -184,7 +184,7 @@ export class CDPContext {
   /**
    * Setup console message collection
    */
-  setupConsoleCollection(ws: WebSocket, onMessage?: (message: ConsoleMessage) => void): void {
+  setupConsoleCollection(ws: WebSocket, onMessage?: (message: ConsoleMessage) => void | Promise<void>): void {
     ws.on('message', (data: Buffer) => {
       const message: CDPMessage = JSON.parse(data.toString());
 
@@ -212,7 +212,13 @@ export class CDPContext {
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
         if (onMessage) {
-          onMessage(consoleMsg);
+          const result = onMessage(consoleMsg);
+          // Handle async callbacks (fire and forget - errors will be handled by the callback itself)
+          if (result && typeof result.then === 'function') {
+            result.catch((error: Error) => {
+              console.error('Error in console message handler:', error.message);
+            });
+          }
         }
       }
 
@@ -238,7 +244,13 @@ export class CDPContext {
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
         if (onMessage) {
-          onMessage(consoleMsg);
+          const result = onMessage(consoleMsg);
+          // Handle async callbacks (fire and forget - errors will be handled by the callback itself)
+          if (result && typeof result.then === 'function') {
+            result.catch((error: Error) => {
+              console.error('Error in console message handler:', error.message);
+            });
+          }
         }
       }
     });
