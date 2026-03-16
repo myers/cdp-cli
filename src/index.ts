@@ -114,10 +114,11 @@ cli.command(
   }
 );
 
+
 // Launch command
 cli.command(
   'launch',
-  'Launch Chrome with remote debugging (macOS only)',
+  'Launch Chrome with remote debugging (macOS,windows, or linux)',
   (yargs) => {
     return yargs.option('port', {
       type: 'number',
@@ -128,6 +129,57 @@ cli.command(
   async (argv) => {
     const port = (argv.port as number | undefined) ?? getDefaultPort();
     await launch.launchChrome({ port });
+  }
+);
+
+cli.command(
+  'resize-window <page> <width> <height>',
+  'Resize the Chrome window containing the specified page',
+  (yargs) => {
+    return yargs
+      .positional('page', {
+        describe: 'Page ID or title',
+        type: 'string'
+      })
+      .positional('width', {
+        describe: 'Window width in pixels',
+        type: 'number',
+        coerce: (value: unknown) => {
+          const num = Number(value);
+          if (!Number.isFinite(num) || num <= 0) {
+            throw new Error('Width must be a positive number');
+          }
+          return num;
+        }
+      })
+      .positional('height', {
+        describe: 'Window height in pixels',
+        type: 'number',
+        coerce: (value: unknown) => {
+          const num = Number(value);
+          if (!Number.isFinite(num) || num <= 0) {
+            throw new Error('Height must be a positive number');
+          }
+          return num;
+        }
+      })
+      .option('state', {
+        type: 'string',
+        description: 'Window state (normal, maximized, minimized, fullscreen)',
+        choices: ['normal', 'maximized', 'minimized', 'fullscreen'] as const
+      });
+  },
+  async (argv) => {
+    const context = new CDPContext(argv['cdp-url'] as string);
+    await pages.resizeWindow(
+      context,
+      argv.page as string,
+      {
+        width: argv.width as number,
+        height: argv.height as number,
+        state: argv.state as 'normal' | 'maximized' | 'minimized' | 'fullscreen' | undefined
+      }
+    );
   }
 );
 
@@ -148,13 +200,13 @@ cli.command(
       })
       .option('duration', {
         type: 'number',
-        description: 'Collection duration in seconds',
+        description: 'Collection duration in seconds (0 to stream until interrupted, >0 for batch mode)',
         alias: 'd',
-        default: 0.1
+        default: 0
       })
       .option('tail', {
         type: 'number',
-        description: 'Limit to last N messages (default: 10, use -1 for all)',
+        description: 'Limit to last N messages (use -1 for all. Only works with batch mode).',
         alias: 'n',
         default: 10
       })
@@ -269,15 +321,19 @@ cli.command(
       })
       .option('format', {
         type: 'string',
-        description: 'Image format (jpeg, png, webp)',
-        alias: 'f',
-        default: 'jpeg'
+        description: 'Image format (jpeg, png, webp). Defaults to the output file extension when available.',
+        alias: 'f'
       })
       .option('quality', {
         type: 'number',
         description: 'JPEG quality (0-100)',
         alias: 'q',
         default: 90
+      })
+      .option('scale', {
+        type: 'number',
+        description: 'Scale factor to resize the image (0 < scale <= 1)',
+        alias: 's'
       });
   },
   async (argv) => {
@@ -286,6 +342,7 @@ cli.command(
       output: argv.output as string,
       format: argv.format as string,
       quality: argv.quality as number,
+      scale: argv.scale as number | undefined,
       page: argv.page as string
     });
   }
@@ -303,14 +360,14 @@ cli.command(
       })
       .option('type', {
         type: 'string',
-        description: 'Filter by request type (xhr, fetch, script, etc)',
+        description: 'Filter by request type (xhr, fetch, script, image, document, preflight, ping, font, stylesheet, other)',
         alias: 't'
       })
       .option('duration', {
         type: 'number',
-        description: 'Collection duration in seconds',
+        description: 'Collection duration in seconds (0 to stream until interrupted)',
         alias: 'd',
-        default: 0.1
+        default: 0
       });
   },
   async (argv) => {
@@ -325,7 +382,7 @@ cli.command(
 
 // Input commands
 cli.command(
-  'click <page> [selector]',
+  'click <page>',
   'Click an element',
   (yargs) => {
     return yargs
@@ -333,9 +390,10 @@ cli.command(
         describe: 'Page ID or title',
         type: 'string'
       })
-      .positional('selector', {
-        describe: 'CSS selector (or use --node)',
-        type: 'string'
+      .option('selector', {
+        type: 'string',
+        description: 'CSS selector to match element',
+        alias: 's'
       })
       .option('node', {
         type: 'number',
@@ -359,22 +417,100 @@ cli.command(
         description: 'Wait timeout in ms for selector to appear',
         alias: 'w'
       })
+      .option('longpress', {
+        type: 'number',
+        description: 'Hold mouse button for N seconds before release (defaults to 1 when flag is present without a value)',
+        coerce: (value: unknown) => {
+          if (value === true) {
+            return 1;
+          }
+          if (value === undefined || value === null) {
+            return undefined;
+          }
+          if (value === '') {
+            return 1;
+          }
+          const num = Number(value);
+          if (!Number.isFinite(num) || num < 0) {
+            throw new Error('--longpress must be a non-negative number');
+          }
+          return num;
+        }
+      })
+      .option('text', {
+        type: 'string',
+        description: 'Match element by visible text instead of CSS selector',
+        alias: 't'
+      })
+      .option('match', {
+        type: 'string',
+        description: 'Text matching strategy (exact, contains, regex)',
+        choices: ['exact', 'contains', 'regex'] as const,
+        default: 'exact'
+      })
+      .option('case-sensitive', {
+        type: 'boolean',
+        description: 'Treat text match as case-sensitive',
+        default: false
+      })
+      .option('nth', {
+        type: 'number',
+        description: 'Select the Nth match when multiple elements match',
+        coerce: (value: unknown) => {
+          if (value === undefined || value === null || value === '') {
+            return undefined;
+          }
+          const num = Number(value);
+          if (!Number.isInteger(num) || num < 1) {
+            throw new Error('--nth must be a positive integer');
+          }
+          return num;
+        }
+      })
       .check((argv) => {
-        if (!argv.selector && !argv.node) {
-          throw new Error('Either <selector> or --node must be provided');
+        const hasSelector = typeof argv.selector === 'string' && argv.selector.length > 0;
+        const hasText = typeof argv.text === 'string' && argv.text.length > 0;
+        const hasNode = typeof argv.node === 'number';
+
+        // Count how many options are provided
+        const providedCount = [hasSelector, hasText, hasNode].filter(Boolean).length;
+
+        if (providedCount === 0) {
+          throw new Error('Provide either a CSS selector, --text, or --node');
+        }
+        if (providedCount > 1) {
+          throw new Error('CSS selector, --text, and --node are mutually exclusive');
+        }
+        if (
+          argv.double === true &&
+          typeof argv.longpress === 'number' &&
+          argv.longpress > 0
+        ) {
+          throw new Error('--double cannot be combined with --longpress');
         }
         return true;
       });
   },
   async (argv) => {
     const context = new CDPContext(argv['cdp-url'] as string);
-    await input.click(context, argv.selector as string | undefined, {
-      page: argv.page as string,
-      node: argv.node as number | undefined,
-      double: argv.double as boolean,
-      userGesture: argv['user-gesture'] as boolean,
-      wait: argv.wait as number | undefined
-    });
+    await input.click(
+      context,
+      {
+        selector: argv.selector as string | undefined,
+        node: argv.node as number | undefined,
+        text: argv.text as string | undefined,
+        match: argv.match as 'exact' | 'contains' | 'regex',
+        caseSensitive: argv.caseSensitive as boolean,
+        nth: argv.nth as number | undefined
+      },
+      {
+        page: argv.page as string,
+        double: argv.double as boolean,
+        userGesture: argv['user-gesture'] as boolean,
+        wait: argv.wait as number | undefined,
+        longpress: argv.longpress as number | undefined
+      }
+    );
   }
 );
 

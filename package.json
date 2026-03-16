@@ -35,6 +35,7 @@
     "url": "https://github.com/myers/cdp-cli"
   },
   "dependencies": {
+    "undici": "^6.22.0",
     "ws": "^8.18.0",
     "yargs": "^18.0.0"
   },

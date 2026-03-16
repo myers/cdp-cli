@@ -645,6 +645,128 @@ describe('Debug Commands', () => {
     });
   });
 
+  it('should stream console messages in real-time when duration is 0', async () => {
+    const capture = captureConsoleOutput();
+    const context = new CDPContext();
+
+    let messageCount = 0;
+    const originalConnect = context.connect.bind(context);
+    context.connect = async (page) => {
+      const ws = await originalConnect(page) as MockWebSocket;
+
+      // Simulate console messages being generated every 100ms
+      const interval = setInterval(() => {
+        messageCount++;
+        ws.simulateMessage({
+          method: 'Runtime.consoleAPICalled',
+          params: {
+            type: 'log',
+            args: [{ type: 'string', value: `Stream message ${messageCount}` }],
+            timestamp: Date.now()
+          }
+        });
+      }, 100);
+
+      // Stop after test completes
+      setTimeout(() => clearInterval(interval), 400);
+
+      return ws;
+    };
+
+    // Start streaming (duration = 0 means infinite/until interrupted)
+    const testPromise = debug.listConsole(context, {
+      page: 'page1',
+      duration: 0, // Streaming mode
+      tail: 10,
+      withType: false,
+      withTimestamp: false,
+      withSource: false
+    });
+
+    // Let it run for 350ms, then interrupt by emitting SIGINT
+    setTimeout(() => {
+      process.emit('SIGINT', 'SIGINT');
+    }, 350);
+
+    await testPromise;
+
+    const logs = capture.getLogs();
+    capture.restore();
+
+    // Should have captured 3 messages (at 100ms, 200ms, 300ms)
+    // Message at 400ms won't be captured because we interrupt at 350ms
+    expect(logs).toHaveLength(3);
+    // In minimal format (no flags), output is bare JSON strings
+    expect(JSON.parse(logs[0])).toBe('Stream message 1');
+    expect(JSON.parse(logs[1])).toBe('Stream message 2');
+    expect(JSON.parse(logs[2])).toBe('Stream message 3');
+  });
+
+  it('should respect formatting options in streaming mode', async () => {
+    const capture = captureConsoleOutput();
+    const context = new CDPContext();
+
+    const originalConnect = context.connect.bind(context);
+    context.connect = async (page) => {
+      const ws = await originalConnect(page) as MockWebSocket;
+
+      // Simulate a few messages with different types
+      setTimeout(() => {
+        ws.simulateMessage({
+          method: 'Runtime.consoleAPICalled',
+          params: {
+            type: 'log',
+            args: [{ type: 'string', value: 'Log message' }],
+            timestamp: 1234567890
+          }
+        });
+        ws.simulateMessage({
+          method: 'Runtime.consoleAPICalled',
+          params: {
+            type: 'error',
+            args: [{ type: 'string', value: 'Error message' }],
+            timestamp: 1234567891
+          }
+        });
+      }, 10);
+
+      setTimeout(() => {
+        process.emit('SIGINT', 'SIGINT');
+      }, 100);
+
+      return ws;
+    };
+
+    // Stream with formatting options enabled
+    await debug.listConsole(context, {
+      page: 'page1',
+      duration: 0, // Streaming mode
+      tail: 10,
+      withType: true,
+      withTimestamp: true,
+      withSource: false
+    });
+
+    const logs = capture.getLogs();
+    capture.restore();
+
+    expect(logs).toHaveLength(2);
+
+    // First message should have type and timestamp
+    const msg1 = JSON.parse(logs[0]);
+    expect(msg1.text).toBe('Log message');
+    expect(msg1.type).toBe('log');
+    expect(msg1.source).toBe('console-api');
+    expect(msg1.timestamp).toBe(1234567890);
+
+    // Second message should also have type and timestamp
+    const msg2 = JSON.parse(logs[1]);
+    expect(msg2.text).toBe('Error message');
+    expect(msg2.type).toBe('error');
+    expect(msg2.source).toBe('console-api');
+    expect(msg2.timestamp).toBe(1234567891);
+  });
+
   describe('snapshot', () => {
     it('should capture text snapshot', async () => {
       const capture = captureConsoleOutput();
@@ -873,6 +995,139 @@ describe('Debug Commands', () => {
       expect(jpegCommand.params.quality).toBe(75);
 
       capture.restore();
+    });
+
+    it.each([
+      ['/tmp/output.png', 'png'],
+      ['/tmp/output.PNG', 'png'],
+      ['/tmp/output.jpg', 'jpeg'],
+      ['/tmp/output.jpeg', 'jpeg'],
+      ['/tmp/output.webp', 'webp'],
+      ['C:\\restaurant\\error_screenshot.png', 'png']
+    ])('should infer screenshot format from output extension %s', async (output, expectedFormat) => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      const sentCommands: any[] = [];
+
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+        const originalSend = ws.send.bind(ws);
+        ws.send = (data: string) => {
+          const message = JSON.parse(data);
+          if (message.method === 'Page.captureScreenshot') {
+            sentCommands.push(message);
+          }
+          originalSend(data);
+        };
+        return ws;
+      };
+
+      await debug.screenshot(context, { page: 'page1', output });
+
+      const screenshotCommand = sentCommands[0];
+      expect(screenshotCommand).toBeDefined();
+      expect(screenshotCommand.params.format).toBe(expectedFormat);
+
+      const calls = (writeFileSync as any).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toBe(output);
+
+      capture.restore();
+    });
+
+    it('should default to jpeg when output extension is unrecognized', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      const sentCommands: any[] = [];
+
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+        const originalSend = ws.send.bind(ws);
+        ws.send = (data: string) => {
+          const message = JSON.parse(data);
+          if (message.method === 'Page.captureScreenshot') {
+            sentCommands.push(message);
+          }
+          originalSend(data);
+        };
+        return ws;
+      };
+
+      await debug.screenshot(context, { page: 'page1', output: '/tmp/output.tiff' });
+
+      const screenshotCommand = sentCommands[0];
+      expect(screenshotCommand).toBeDefined();
+      expect(screenshotCommand.params.format).toBe('jpeg');
+
+      capture.restore();
+    });
+
+    it('should scale screenshot when scale provided', async () => {
+      const capture = captureConsoleOutput();
+      const context = new CDPContext();
+
+      const originalConnect = context.connect.bind(context);
+      const sentCommands: any[] = [];
+
+      context.connect = async (page) => {
+        const ws = await originalConnect(page) as MockWebSocket;
+        const originalSend = ws.send.bind(ws);
+        ws.send = (data: string) => {
+          const message = JSON.parse(data);
+          sentCommands.push(message);
+          originalSend(data);
+        };
+        return ws;
+      };
+
+      await debug.screenshot(context, {
+        page: 'page1',
+        output: '/tmp/scaled.jpg',
+        format: 'jpeg',
+        quality: 90,
+        scale: 0.5
+      });
+
+      expect(writeFileSync).toHaveBeenCalled();
+      const writeCalls = (writeFileSync as any).mock.calls;
+      const lastWriteCall = writeCalls[writeCalls.length - 1];
+      expect(lastWriteCall[0]).toBe('/tmp/scaled.jpg');
+
+      const metricsCommand = sentCommands.find(msg => msg.method === 'Page.getLayoutMetrics');
+      expect(metricsCommand).toBeDefined();
+
+      const screenshotCommand = sentCommands.find(msg => msg.method === 'Page.captureScreenshot');
+      expect(screenshotCommand).toBeDefined();
+      expect(screenshotCommand.params.clip.scale).toBe(0.5);
+      expect(screenshotCommand.params.clip.width).toBeGreaterThan(0);
+      expect(screenshotCommand.params.clip.height).toBeGreaterThan(0);
+
+      capture.restore();
+    });
+
+    it('should validate scale range', async () => {
+      const capture = captureConsoleOutput();
+      const exitMock = mockProcessExit();
+      const context = new CDPContext();
+
+      try {
+        await debug.screenshot(context, { page: 'page1', scale: 1.5 });
+      } catch (e) {
+        // Expected process.exit
+      }
+
+      expect(exitMock.exitCode).toBe(1);
+      const error = JSON.parse(capture.getLogs()[0]);
+      expect(error.error).toBe(true);
+      expect(error.code).toBe('SCREENSHOT_FAILED');
+      expect(error.message).toContain('Invalid scale');
+
+      capture.restore();
+      exitMock.restore();
     });
 
     it('should handle page not found error', async () => {

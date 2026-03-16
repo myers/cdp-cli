@@ -81,11 +81,18 @@ export class CDPContext {
    */
   async findPage(idOrTitle: string): Promise<Page> {
     const pages = await this.getPages();
-    const page = pages.find(p =>
-      p.id === idOrTitle || p.title.includes(idOrTitle)
+
+    // Prefer exact ID match, which guarantees uniqueness.
+    const byId = pages.find((page) => page.id === idOrTitle);
+    if (byId) {
+      return byId;
+    }
+
+    const titleMatches = pages.filter((page) =>
+      page.title.includes(idOrTitle)
     );
 
-    if (!page) {
+    if (titleMatches.length === 0) {
       // Provide helpful error with available pages
       let errorMsg = `Page not found: '${idOrTitle}'.`;
 
@@ -108,7 +115,16 @@ export class CDPContext {
       throw new Error(errorMsg);
     }
 
-    return page;
+    if (titleMatches.length > 1) {
+      const summary = titleMatches
+        .map((page) => `"${page.title}" (${page.id})`)
+        .join(', ');
+      throw new Error(
+        `Multiple pages matched "${idOrTitle}". Use an exact page ID or refine the title. Matches: ${summary}`
+      );
+    }
+
+    return titleMatches[0];
   }
 
   /**
@@ -168,7 +184,7 @@ export class CDPContext {
   /**
    * Setup console message collection
    */
-  setupConsoleCollection(ws: WebSocket): void {
+  setupConsoleCollection(ws: WebSocket, onMessage?: (message: ConsoleMessage) => void | Promise<void>): void {
     ws.on('message', (data: Buffer) => {
       const message: CDPMessage = JSON.parse(data.toString());
 
@@ -195,6 +211,15 @@ export class CDPContext {
         };
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
+        if (onMessage) {
+          const result = onMessage(consoleMsg);
+          // Handle async callbacks (fire and forget - errors will be handled by the callback itself)
+          if (result && typeof result.then === 'function') {
+            result.catch((error: Error) => {
+              console.error('Error in console message handler:', error.message);
+            });
+          }
+        }
       }
 
       if (message.method === 'Runtime.exceptionThrown') {
@@ -218,6 +243,15 @@ export class CDPContext {
         };
 
         this.consoleMessages.set(consoleMsg.id, consoleMsg);
+        if (onMessage) {
+          const result = onMessage(consoleMsg);
+          // Handle async callbacks (fire and forget - errors will be handled by the callback itself)
+          if (result && typeof result.then === 'function') {
+            result.catch((error: Error) => {
+              console.error('Error in console message handler:', error.message);
+            });
+          }
+        }
       }
     });
   }
@@ -225,68 +259,77 @@ export class CDPContext {
   /**
    * Setup network request collection
    */
-  setupNetworkCollection(ws: WebSocket): void {
-    // Local map for assembling multi-event request data before final storage
-    const requests = new Map<string, Partial<NetworkRequest>>();
+  setupNetworkCollection(
+    ws: WebSocket,
+    onRequest?: (
+      request: NetworkRequest,
+      event: 'requestWillBeSent' | 'responseReceived' | 'loadingFinished'
+    ) => void
+  ): void {
+    const updateRequest = (requestId: string, patch: Partial<NetworkRequest>): NetworkRequest => {
+      const current = this.networkRequests.get(requestId);
+
+      const next: NetworkRequest = {
+        id: requestId,
+        url: patch.url ?? current?.url ?? '',
+        method: patch.method ?? current?.method ?? 'GET',
+        timestamp: patch.timestamp ?? current?.timestamp ?? Date.now(),
+        type: patch.type ?? current?.type,
+        status: patch.status ?? current?.status,
+        size: patch.size ?? current?.size,
+        requestHeaders: patch.requestHeaders ?? current?.requestHeaders,
+        responseHeaders: patch.responseHeaders ?? current?.responseHeaders
+      };
+
+      this.networkRequests.set(requestId, next);
+      return next;
+    };
+
+    const emit = (
+      requestId: string,
+      event: 'requestWillBeSent' | 'responseReceived' | 'loadingFinished'
+    ): void => {
+      if (!onRequest) {
+        return;
+      }
+      const entry = this.networkRequests.get(requestId);
+      if (entry) {
+        onRequest({ ...entry }, event);
+      }
+    };
 
     ws.on('message', (data: Buffer) => {
       const message: CDPMessage = JSON.parse(data.toString());
 
       if (message.method === 'Network.requestWillBeSent') {
         const { requestId, request, timestamp, type } = message.params;
-        const existing = requests.get(requestId);
-
-        if (existing) {
-          // Update existing request (in case responseReceived arrived first)
-          existing.url = request.url;
-          existing.method = request.method;
-          existing.timestamp = timestamp * 1000;
-          existing.type = type;
-          existing.requestHeaders = request.headers;
-        } else {
-          requests.set(requestId, {
-            id: requestId,
-            url: request.url,
-            method: request.method,
-            timestamp: timestamp * 1000,
-            type: type,
-            requestHeaders: request.headers
-          });
-        }
+        updateRequest(requestId, {
+          url: request.url,
+          method: request.method,
+          timestamp: timestamp * 1000,
+          type,
+          requestHeaders: request.headers
+        });
+        emit(requestId, 'requestWillBeSent');
       }
 
       if (message.method === 'Network.responseReceived') {
-        const { requestId, response } = message.params;
-        let req = requests.get(requestId);
-
-        // Handle race condition: responseReceived can arrive before requestWillBeSent
-        if (!req) {
-          req = {
-            id: requestId,
-            url: response.url || '',
-            method: 'GET', // Default, will be updated if requestWillBeSent arrives
-            timestamp: Date.now()
-          };
-          requests.set(requestId, req);
-        }
-
-        req.status = response.status;
-        req.responseHeaders = response.headers;
-
-        // Calculate size if available
-        if (response.encodedDataLength !== undefined) {
-          req.size = response.encodedDataLength;
-        }
-
-        this.networkRequests.set(requestId, req as NetworkRequest);
+        const { requestId, response, type } = message.params;
+        updateRequest(requestId, {
+          url: response.url || '',
+          status: response.status,
+          responseHeaders: response.headers,
+          type: type ?? undefined
+        });
+        emit(requestId, 'responseReceived');
       }
 
       if (message.method === 'Network.loadingFinished') {
         const { requestId, encodedDataLength } = message.params;
-        const req = this.networkRequests.get(requestId);
-        if (req) {
-          req.size = encodedDataLength;
-        }
+        updateRequest(requestId, {
+          size: encodedDataLength
+        });
+        emit(requestId, 'loadingFinished');
       }
     });
   }
@@ -400,10 +443,11 @@ export class CDPContext {
    */
   async createPage(url?: string): Promise<Page> {
     const endpoint = url
-      ? `${this.cdpUrl}/json/new?${encodeURIComponent(url)}`
+      // Chrome expects the literal URL after '?', so use encodeURI to keep protocol delimiters while escaping spaces; fragments must still be escaped.
+      ? `${this.cdpUrl}/json/new?${encodeURI(url).replace(/#/g, '%23')}`
       : `${this.cdpUrl}/json/new`;
 
-    const response = await cdpFetch(endpoint);
+    const response = await cdpFetch(endpoint, { method: 'PUT' });
 
     // If HTTP endpoint works, use it
     if (response.ok) {

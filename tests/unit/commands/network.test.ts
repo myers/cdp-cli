@@ -44,9 +44,10 @@ describe('Network Commands', () => {
       const logs = capture.getLogs();
       capture.restore();
 
-      expect(logs).toHaveLength(1);
-      const request = JSON.parse(logs[0]);
+      expect(logs).toHaveLength(3);
+      const request = JSON.parse(logs[2]);
 
+      expect(request.event).toBe('loadingFinished');
       expect(request.url).toBe('https://api.example.com/data');
       expect(request.method).toBe('GET');
       expect(request.status).toBe(200);
@@ -105,8 +106,9 @@ describe('Network Commands', () => {
       const logs = capture.getLogs();
       capture.restore();
 
-      expect(logs).toHaveLength(1);
-      const request = JSON.parse(logs[0]);
+      expect(logs).toHaveLength(2);
+      const request = JSON.parse(logs[1]);
+      expect(request.event).toBe('responseReceived');
       expect(request.type).toBe('fetch');
     });
 

@@ -84,9 +84,32 @@ export class MockWebSocket extends EventEmitter {
           };
           break;
 
+        case 'DOM.querySelectorAll':
+          result = {
+            nodeIds: [42]
+          };
+          break;
+
         case 'DOM.querySelector':
           result = {
             nodeId: 42
+          };
+          break;
+
+        case 'DOM.resolveNode':
+          result = {
+            object: {
+              objectId: 'object-42'
+            }
+          };
+          break;
+
+        case 'DOM.describeNode':
+          result = {
+            node: {
+              nodeName: 'BUTTON',
+              attributes: ['id', 'submit', 'class', 'btn primary']
+            }
           };
           break;
 
@@ -94,6 +117,25 @@ export class MockWebSocket extends EventEmitter {
           result = {
             model: {
               content: [100, 100, 200, 100, 200, 200, 100, 200]
+            }
+          };
+          break;
+
+        case 'Runtime.callFunctionOn':
+          result = {
+            result: {
+              value: {
+                tagName: 'button',
+                id: 'submit',
+                classes: ['btn', 'primary'],
+                text: 'Submit',
+                rect: {
+                  x: 100,
+                  y: 100,
+                  width: 100,
+                  height: 100
+                }
+              }
             }
           };
           break;
@@ -131,6 +173,21 @@ export class MockWebSocket extends EventEmitter {
         case 'Page.captureScreenshot':
           result = {
             data: 'base64encodeddata=='
+          };
+          break;
+
+        case 'Page.getLayoutMetrics':
+          result = {
+            cssVisualViewport: {
+              pageX: 0,
+              pageY: 0,
+              clientWidth: 1280,
+              clientHeight: 720
+            },
+            cssContentSize: {
+              width: 1280,
+              height: 720
+            }
           };
           break;
 
@@ -177,6 +234,21 @@ export class MockWebSocket extends EventEmitter {
           result = {
             nodes: []
           };
+          break;
+
+        case 'Browser.getWindowForTarget':
+          result = {
+            windowId: 101,
+            bounds: {
+              windowState: 'normal',
+              width: 1280,
+              height: 720
+            }
+          };
+          break;
+
+        case 'Browser.setWindowBounds':
+          result = {};
           break;
 
         default:

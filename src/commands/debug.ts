@@ -2,14 +2,126 @@
  * Debugging commands: console, snapshot, eval, screenshot
  */
 
-import { CDPContext, Page } from '../context.js';
-import { outputLines, outputLine, outputError, outputSuccess, outputRaw } from '../output.js';
+import { CDPContext, ConsoleMessage, Page } from '../context.js';
+import { outputLine, outputError, outputSuccess, outputRaw } from '../output.js';
 import { writeFileSync } from 'fs';
 import { WebSocket } from 'ws';
+import { extname } from 'node:path';
 
 /**
- * List console messages
+ * Format a console message for output based on display options
+ * Returns an encoded JSON string ready for output
  */
+function formatConsoleMessage(
+  message: ConsoleMessage,
+  options: {
+    withType: boolean;
+    withTimestamp: boolean;
+    withSource: boolean;
+  }
+): string {
+  const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
+
+  if (needsObjectFormat) {
+    const obj: any = { text: message.text };
+
+    if (options.withType) {
+      obj.type = message.type;
+      obj.source = message.source;
+    }
+
+    if (options.withTimestamp) {
+      obj.timestamp = message.timestamp;
+    }
+
+    if (options.withSource) {
+      if (message.line !== undefined) obj.line = message.line;
+      if (message.url) obj.url = message.url;
+    }
+
+    return JSON.stringify(obj);
+  } else {
+    // Minimal format: just the text as JSON string
+    return JSON.stringify(message.text);
+  }
+}
+
+/**
+ * Expand message text by fetching object properties via CDP
+ */
+async function expandMessageText(
+  context: CDPContext,
+  ws: WebSocket,
+  message: ConsoleMessage,
+  inspect: boolean
+): Promise<void> {
+  // For exceptions with -i, show full stack trace
+  if (inspect && message.stackTrace) {
+    message.text = message.stackTrace;
+    return;
+  }
+
+  if (message.args && message.args.length > 0) {
+    if (inspect) {
+      // Full expansion mode - recursively expand all objects/arrays
+      const expandedArgs = await Promise.all(
+        message.args.map(async (arg: any) => {
+          return await expandValue(context, ws, arg, 0, 3);
+        })
+      );
+      message.text = expandedArgs.map(a => JSON.stringify(a)).join(' ');
+    } else {
+      // Default mode - shallow expansion with descriptions
+      const formattedArgs = await Promise.all(
+        message.args.map(async (arg: any) => {
+          // Primitive values
+          if (arg.value !== undefined) return String(arg.value);
+
+          // Error objects - use description directly (contains message + stack trace)
+          if (arg.subtype === 'error' && arg.description) {
+            return arg.description;
+          }
+
+          // Objects with objectId - fetch properties
+          if (arg.objectId) {
+            try {
+              const props = await context.sendCommand(ws, 'Runtime.getProperties', {
+                objectId: arg.objectId,
+                ownProperties: true
+              });
+
+              // Format as {key: value, ...}
+              if (props.result && props.result.length > 0) {
+                const entries = props.result
+                  .filter((p: any) => p.enumerable !== false)
+                  .slice(0, 10) // Limit to first 10 properties
+                  .map((p: any) => {
+                    const value = p.value?.value !== undefined
+                      ? JSON.stringify(p.value.value)
+                      : (p.value?.description || '...');
+                    return `${p.name}: ${value}`;
+                  })
+                  .join(', ');
+                const overflow = props.result.length > 10 ? ', ...' : '';
+                return `{${entries}${overflow}}`;
+              }
+            } catch (error) {
+              // Fall back to description if property fetch fails
+              return arg.description || 'Object';
+            }
+          }
+
+          // Fallback to description
+          return arg.description || JSON.stringify(arg);
+        })
+      );
+
+      // Update message text with formatted args
+      message.text = formattedArgs.join(' ');
+    }
+  }
+}
+
 /**
  * Recursively expand an object/array via CDP Runtime.getProperties
  */
@@ -85,7 +197,7 @@ export async function listConsole(
   options: {
     type?: string;
     page: string;
-    duration: number;
+    duration?: number;
     tail: number;
     withType: boolean;
     withTimestamp: boolean;
@@ -94,140 +206,83 @@ export async function listConsole(
   }
 ): Promise<void> {
   let ws: WebSocket | undefined;
+  const duration = options.duration ?? 0;
   try {
     // Get page to monitor
     const page = await context.findPage(options.page);
 
     // Connect and enable Runtime domain
     ws = await context.connect(page);
-    context.setupConsoleCollection(ws);
-    await context.sendCommand(ws, 'Runtime.enable');
 
-    // Collect for specified duration (in milliseconds)
-    await new Promise(resolve => setTimeout(resolve, options.duration * 1000));
-
-    // Get collected messages
-    let messages = context.getConsoleMessages();
-
-    // Fetch object properties for better formatting
-    if (ws) {
-      for (const msg of messages) {
-        // For exceptions with -i, show full stack trace
-        if (options.inspect && msg.stackTrace) {
-          msg.text = msg.stackTrace;
-          continue;
+    // Streaming mode: output messages immediately as they arrive
+    if (duration === 0) {
+      context.setupConsoleCollection(ws, async (message: ConsoleMessage) => {
+        if (options.type && message.type !== options.type) {
+          return;
         }
 
-        if (msg.args && msg.args.length > 0) {
-          if (options.inspect) {
-            // Full expansion mode - recursively expand all objects/arrays
-            const expandedArgs = await Promise.all(
-              msg.args.map(async (arg: any) => {
-                return await expandValue(context, ws!, arg, 0, 3);
-              })
-            );
-            msg.text = expandedArgs.map(a => JSON.stringify(a)).join(' ');
-          } else {
-            // Default mode - shallow expansion with descriptions
-            const formattedArgs = await Promise.all(
-              msg.args.map(async (arg: any) => {
-                // Primitive values
-                if (arg.value !== undefined) return String(arg.value);
-
-                // Error objects - use description directly (contains message + stack trace)
-                if (arg.subtype === 'error' && arg.description) {
-                  return arg.description;
-                }
-
-                // Objects with objectId - fetch properties
-                if (arg.objectId && ws) {
-                  try {
-                    const props = await context.sendCommand(ws, 'Runtime.getProperties', {
-                      objectId: arg.objectId,
-                      ownProperties: true
-                    });
-
-                    // Format as {key: value, ...}
-                    if (props.result && props.result.length > 0) {
-                      const entries = props.result
-                        .filter((p: any) => p.enumerable !== false)
-                        .slice(0, 10) // Limit to first 10 properties
-                        .map((p: any) => {
-                          const value = p.value?.value !== undefined
-                            ? JSON.stringify(p.value.value)
-                            : (p.value?.description || '...');
-                          return `${p.name}: ${value}`;
-                        })
-                        .join(', ');
-                      const overflow = props.result.length > 10 ? ', ...' : '';
-                      return `{${entries}${overflow}}`;
-                    }
-                  } catch (error) {
-                    // Fall back to description if property fetch fails
-                    return arg.description || 'Object';
-                  }
-                }
-
-                // Fallback to description
-                return arg.description || JSON.stringify(arg);
-              })
-            );
-
-            // Update message text with formatted args
-            msg.text = formattedArgs.join(' ');
-          }
-        }
-      }
-    }
-
-    // Filter by type if specified
-    if (options.type) {
-      messages = messages.filter(m => m.type === options.type);
-    }
-
-    // Track total before truncation for stderr warning
-    const totalMessages = messages.length;
-
-    // Apply tail limit (last N messages)
-    if (options.tail !== -1 && messages.length > options.tail) {
-      messages = messages.slice(-options.tail);
-
-      // Warn on stderr when truncating
-      const skippedCount = totalMessages - messages.length;
-      const suggestedTail = Math.min(totalMessages, 50);
-      console.error(`(${skippedCount} messages skipped. Use --tail ${suggestedTail} or --all to see more)`);
-    }
-
-    // Output format depends on flags
-    const needsObjectFormat = options.withType || options.withTimestamp || options.withSource;
-
-    if (needsObjectFormat) {
-      // Object format with requested fields
-      const output = messages.map(msg => {
-        const obj: any = { text: msg.text };
-
-        if (options.withType) {
-          obj.type = msg.type;
-          obj.source = msg.source;
-        }
-
-        if (options.withTimestamp) {
-          obj.timestamp = msg.timestamp;
-        }
-
-        if (options.withSource) {
-          if (msg.line) obj.line = msg.line;
-          if (msg.url) obj.url = msg.url;
-        }
-
-        return obj;
+        await expandMessageText(context, ws, message, options.inspect || false);
+        const formatted = formatConsoleMessage(message, options);
+        outputRaw(formatted);
       });
-      outputLines(output);
+      await context.sendCommand(ws, 'Runtime.enable');
+
+      await new Promise<void>((resolve) => {
+        function cleanup(): void {
+          process.off('SIGINT', onSigint);
+          process.off('SIGTERM', onSigterm);
+        }
+
+        function onSigint(): void {
+          process.exitCode = 130;
+          cleanup();
+          resolve();
+        }
+
+        function onSigterm(): void {
+          process.exitCode = 143;
+          cleanup();
+          resolve();
+        }
+
+        process.on('SIGINT', onSigint);
+        process.on('SIGTERM', onSigterm);
+      });
     } else {
-      // Minimal format: bare strings
-      messages.forEach(msg => {
-        outputRaw(JSON.stringify(msg.text));
-      });
+      // Batch mode: collect messages, format, filter, then output
+      context.setupConsoleCollection(ws);
+      await context.sendCommand(ws, 'Runtime.enable');
+
+      // Collect for specified duration
+      await new Promise(resolve => setTimeout(resolve, duration * 1000));
+
+      // Get collected messages
+      let messages = context.getConsoleMessages();
+
+      // Filter by type if specified
+      if (options.type) {
+        messages = messages.filter(m => m.type === options.type);
+      }
+
+      // Track total before truncation for stderr warning
+      const totalMessages = messages.length;
+
+      // Apply tail limit (last N messages)
+      if (options.tail !== -1 && messages.length > options.tail) {
+        messages = messages.slice(-options.tail);
+
+        // Warn on stderr when truncating
+        const skippedCount = totalMessages - messages.length;
+        const suggestedTail = Math.min(totalMessages, 50);
+        console.error(`(${skippedCount} messages skipped. Use --tail ${suggestedTail} or --all to see more)`);
+      }
+
+      // Format and output messages
+      for (const msg of messages) {
+        await expandMessageText(context, ws, msg, options.inspect || false);
+        const formatted = formatConsoleMessage(msg, options);
+        outputRaw(formatted);
+      }
     }
   } catch (error) {
     outputError(
@@ -355,7 +410,7 @@ export async function evaluate(
  */
 export async function screenshot(
   context: CDPContext,
-  options: { output: string; format?: string; page: string; quality?: number }
+  options: { output: string; format?: string; page: string; quality?: number; scale?: number }
 ): Promise<void> {
   let ws;
   try {
@@ -364,18 +419,71 @@ export async function screenshot(
 
     ws = await context.connect(page);
 
-    const format = options.format || 'jpeg';
     const validFormats = ['jpeg', 'png', 'webp'];
+    const detectedFormat = (() => {
+      const explicitFormat = options.format?.toLowerCase();
+      if (explicitFormat) {
+        return explicitFormat;
+      }
+
+      if (!options.output) {
+        return undefined;
+      }
+
+      const extension = extname(options.output).toLowerCase();
+      if (!extension) {
+        return undefined;
+      }
+
+      const normalizedExtension = extension.slice(1);
+      if (normalizedExtension === 'jpg') {
+        return 'jpeg';
+      }
+
+      if (validFormats.includes(normalizedExtension)) {
+        return normalizedExtension;
+      }
+
+      return undefined;
+    })();
+
+    const format = detectedFormat ?? 'jpeg';
+
     if (!validFormats.includes(format)) {
       throw new Error(`Invalid format: ${format}. Must be one of: ${validFormats.join(', ')}`);
     }
 
     const quality = options.quality || 90;
+    const scale = options.scale ?? 1;
 
-    const result = await context.sendCommand(ws, 'Page.captureScreenshot', {
+    if (scale <= 0 || scale > 1) {
+      throw new Error(`Invalid scale: ${scale}. Must be between 0 (exclusive) and 1 (inclusive).`);
+    }
+
+    const captureParams: Record<string, any> = {
       format,
       quality: format === 'jpeg' ? quality : undefined
-    });
+    };
+
+    if (scale !== 1) {
+      const layoutMetrics = await context.sendCommand(ws, 'Page.getLayoutMetrics');
+      const width = layoutMetrics?.cssVisualViewport ?.clientWidth;
+      const height = layoutMetrics?.cssVisualViewport ?.clientHeight;
+
+      if (!width || !height) {
+        throw new Error('Unable to determine viewport dimensions for scaling.');
+      }
+
+      captureParams.clip = {
+        x: 0,
+        y: 0,
+        width,
+        height,
+        scale
+      };
+    }
+
+    const result = await context.sendCommand(ws, 'Page.captureScreenshot', captureParams);
 
     // Save to file
     const buffer = Buffer.from(result.data, 'base64');

@@ -19,7 +19,7 @@ describe('CDPContext', () => {
       const context = new CDPContext();
       const pages = await context.getPages();
 
-      expect(pages).toHaveLength(3);
+      expect(pages).toHaveLength(4);
       expect(pages[0].id).toBe('page1');
       expect(pages[0].title).toBe('Example Domain');
       expect(pages[0].type).toBe('page');
@@ -42,7 +42,7 @@ describe('CDPContext', () => {
       const context = new CDPContext();
       const pages = await context.getPages();
 
-      expect(pages).toHaveLength(3);
+      expect(pages).toHaveLength(4);
       expect(pages.every(p => p.type === 'page')).toBe(true);
     });
 
@@ -63,12 +63,17 @@ describe('CDPContext', () => {
       expect(page.title).toBe('GitHub');
     });
 
-    it('should find page by partial title', async () => {
+    it('should find page by partial title when unique', async () => {
       const context = new CDPContext();
-      const page = await context.findPage('Hub');
+      const page = await context.findPage('Goog');
 
-      expect(page.id).toBe('page2');
-      expect(page.title).toBe('GitHub');
+      expect(page.id).toBe('page3');
+      expect(page.title).toBe('Google');
+    });
+
+    it('should throw error when multiple pages match', async () => {
+      const context = new CDPContext();
+      await expect(context.findPage('GitHub')).rejects.toThrow('Multiple pages matched');
     });
 
     it('should throw error if page not found', async () => {
@@ -103,8 +108,8 @@ describe('CDPContext', () => {
       installMockFetch({
         pages: [
           ...samplePages,
-          { id: 'page4', title: 'Page 4', url: 'http://example.com/4', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page4' },
-          { id: 'page5', title: 'Page 5', url: 'http://example.com/5', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page5' }
+          { id: 'page5', title: 'Page 5', url: 'http://example.com/5', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page5' },
+          { id: 'page6', title: 'Page 6', url: 'http://example.com/6', type: 'page', webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page6' }
         ]
       });
 
@@ -117,7 +122,7 @@ describe('CDPContext', () => {
         const message = (error as Error).message;
 
         // Should show "and 2 more"
-        expect(message).toContain('and 2 more');
+        expect(message).toContain('and 3 more');
       }
     });
   });
@@ -372,6 +377,42 @@ describe('CDPContext', () => {
 
       const context = new CDPContext();
       await expect(context.createPage()).rejects.toThrow('Failed to create page');
+    });
+
+    it('should construct endpoint without encoding protocol delimiters', async () => {
+      const calls: any[] = [];
+      const fetchStub = async (input: any, init?: any) => {
+        calls.push([input, init]);
+        return {
+          ok: true,
+          async json() {
+            return {
+              id: 'new-page-123',
+              title: 'New Tab',
+              url: 'http://localhost:3001/path with space',
+              type: 'page',
+              webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/new-page-123'
+            };
+          }
+        } as any;
+      };
+
+      const originalFetch = (global as any).fetch;
+      (global as any).fetch = fetchStub;
+
+      try {
+        const context = new CDPContext();
+        await context.createPage('http://localhost:3001/path with space#section');
+
+        expect(calls).toEqual([
+          [
+            'http://localhost:9222/json/new?http://localhost:3001/path%20with%20space%23section',
+            { method: 'PUT' }
+          ]
+        ]);
+      } finally {
+        (global as any).fetch = originalFetch;
+      }
     });
   });
 });

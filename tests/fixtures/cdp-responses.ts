@@ -23,6 +23,13 @@ export const samplePages = [
     url: 'https://google.com',
     type: 'page',
     webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page3'
+  },
+  {
+    id: 'page4',
+    title: 'GitHub Issues',
+    url: 'https://github.com/issues',
+    type: 'page',
+    webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/page4'
   }
 ];
 
@@ -196,3 +203,4 @@ export const accessibilityResponses = {
     ]
   }
 };
+

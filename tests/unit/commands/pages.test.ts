@@ -24,7 +24,7 @@ describe('Pages Commands', () => {
       const logs = capture.getLogs();
       capture.restore();
 
-      expect(logs).toHaveLength(3);
+      expect(logs).toHaveLength(4);
 
       const page1 = JSON.parse(logs[0]);
       expect(page1).toEqual({
@@ -183,14 +183,34 @@ describe('Pages Commands', () => {
       const capture = captureConsoleOutput();
       const context = new CDPContext();
 
-      await pages.closePage(context, 'GitHub');
+      await pages.closePage(context, 'GitHub Issues');
 
       const logs = capture.getLogs();
       capture.restore();
 
       const result = JSON.parse(logs[0]);
       expect(result.success).toBe(true);
-      expect(result.data.title).toBe('GitHub');
+      expect(result.data.title).toBe('GitHub Issues');
+    });
+
+    it('should error when title matches multiple pages', async () => {
+      const capture = captureConsoleOutput();
+      const exitMock = mockProcessExit();
+      const context = new CDPContext();
+
+      try {
+        await pages.closePage(context, 'GitHub');
+      } catch {
+        // Expected exit
+      }
+
+      expect(exitMock.exitCode).toBe(1);
+      const error = JSON.parse(capture.getLogs()[0]);
+      expect(error.error).toBe(true);
+      expect(error.message).toContain('Multiple pages matched');
+
+      capture.restore();
+      exitMock.restore();
     });
   });
 });

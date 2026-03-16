@@ -59,6 +59,12 @@ cdp-cli click "example" "a"
 
 # Take a screenshot
 cdp-cli screenshot "example" screenshot.jpg
+
+# List console messages (collects for 0.1s)
+cdp-cli console "example" -d 0.1
+
+# Evaluate JavaScript
+cdp-cli eval "example" "document.title"
 ```
 
 Or start Chrome manually:
@@ -72,7 +78,7 @@ Or start Chrome manually:
 google-chrome --remote-debugging-port=9222
 
 # Windows
-chrome.exe --remote-debugging-port=9222
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
 ```
 
 ## Output Format: NDJSON
@@ -89,7 +95,7 @@ $ cdp-cli tabs
 {"id":"A1B2C3","title":"GitHub","url":"https://github.com","type":"page"}
 {"id":"D4E5F6","title":"Google","url":"https://google.com","type":"page"}
 
-$ cdp-cli console "example"
+$ cdp-cli console "example" --with-type --with-timestamp --with-source
 {"type":"log","timestamp":1698234567890,"text":"Page loaded","source":"console-api"}
 {"type":"error","timestamp":1698234568123,"text":"TypeError: Cannot read...","source":"exception","line":42,"url":"https://example.com/app.js"}
 
@@ -124,6 +130,12 @@ cdp-cli go "example" reload
 ```bash
 cdp-cli close "example"
 cdp-cli close A1B2C3
+```
+
+**resize-window** - Resize the Chrome window for a page
+```bash
+cdp-cli resize-window "example" 1280 720
+cdp-cli resize-window A1B2C3 1440 900 --state maximized
 ```
 
 ### Debugging
@@ -204,9 +216,18 @@ cdp-cli screenshot "example" --output screenshot.jpg
 # Different formats
 cdp-cli screenshot "example" --output screenshot.png --format png
 
+# Downscale before saving (50% size)
+cdp-cli screenshot "example" --output screenshot.png --scale 0.5
+
 # Output base64 (NDJSON)
 cdp-cli screenshot "example"
 ```
+
+Optional flags:
+- `--output, -o`: Save to file instead of emitting base64
+- `--format, -f`: Choose `jpeg`, `png`, or `webp`
+- `--quality, -q`: JPEG quality (0-100)
+- `--scale, -s`: Downscale width and height by the factor (`0 < scale <= 1`)
 
 ### Network Inspection
 
@@ -228,14 +249,27 @@ cdp-cli network "example" --duration 5 --type fetch
 
 ### Input Automation
 
-**click** - Click an element by CSS selector
+**click** - Click an element by CSS selector or visible text
+Supports `--text`, `--match exact|contains|regex`, `--case-sensitive`, and `--nth` for multi-match disambiguation. Use `--longpress <seconds>` to hold the primary button before release (defaults to 1 second when the flag is provided without a value; not compatible with `--double`). When multiple elements match, the CLI reports each candidate (including bounding boxes) so an LLM can choose the right target with `--nth`.
 ```bash
+
+# CSS selector (default behaviour)
 cdp-cli click "example" "button#submit"
 cdp-cli click "example" "a.link" --double
+cdp-cli click "example" "li.menu-item" --longpress 0.75
+cdp-cli click "example" "li.menu-item" --longpress        # defaults to 1 second
 
 # Use --user-gesture for WebXR, fullscreen, and other activation-gated APIs
 cdp-cli click "example" "button#enter-vr" --user-gesture
 cdp-cli click "example" "button#fullscreen" -g  # short flag
+
+# Visible text (exact match, case-insensitive by default)
+cdp-cli click "example" --text "Submit"           # single match
+cdp-cli click "example" --text "Submit" --nth 2   # choose the 2nd match
+
+# Alternative text matching strategies
+cdp-cli click "example" --text "enter" --match contains
+cdp-cli click "example" --text "^\d+$" --match regex --case-sensitive
 ```
 
 **fill** - Fill an input element
